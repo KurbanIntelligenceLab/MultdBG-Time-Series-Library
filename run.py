@@ -140,6 +140,13 @@ if __name__ == '__main__':
     # TimeXer
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
 
+
+    # dBG_encoder Parameters
+    parser.add_argument('--dBG', action="store_true", help='Enable dBG_encoder features')
+    parser.add_argument('--k', type=int, default=4, help='k parameter for dBG_encoder')
+    parser.add_argument('--d_graph', type=int, default=32, help='Encoding dims for the dBG_encoder')
+    parser.add_argument('--disc', type=int, default=20, help='Alphabet size for dBG_encoder')
+
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
         args.device = torch.device('cuda:{}'.format(args.gpu))
@@ -199,10 +206,10 @@ if __name__ == '__main__':
                 args.des, ii)
 
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-            exp.train(setting)
+            _ ,dBG_dataset = exp.train(setting)
 
             print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            exp.test(setting)
+            exp.test(setting, dBG_dataset)
             if args.gpu_type == 'mps':
                 torch.backends.mps.empty_cache()
             elif args.gpu_type == 'cuda':

@@ -1,8 +1,7 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.utils import weight_norm
 import math
+
+import torch.nn as nn
+from triton.language import dtype
 
 
 class PositionalEmbedding(nn.Module):
@@ -124,6 +123,49 @@ class DataEmbedding(nn.Module):
             x = self.value_embedding(
                 x) + self.temporal_embedding(x_mark) + self.position_embedding(x)
         return self.dropout(x)
+
+
+import torch
+import torch.nn.functional as F
+from torch.nn import Sequential, Linear, ReLU
+from torch_geometric.nn import GINEConv, global_mean_pool
+
+class GraphEncoder(torch.nn.Module):
+    def __init__(self, k, d_graph, seq_len):
+        super(GraphEncoder, self).__init__()
+        edge_feat_cnt = k + 1
+        # MLP for edge features (5D: weight + kmer)
+        edge_mlp = Sequential(
+            Linear(edge_feat_cnt, d_graph),  # Map (1D weight + k-D kmer) → d_model
+            ReLU(),
+            Linear(d_graph, d_graph)
+        )
+
+        # Explicitly set edge_dim=5 since edge features are 5D
+        self.conv1 = GINEConv(nn=edge_mlp, edge_dim=edge_feat_cnt)
+        self.conv2 = GINEConv(nn=edge_mlp, edge_dim=edge_feat_cnt)
+        self.project = nn.Linear(in_features=seq_len - k + 2, out_features=seq_len)
+
+    def forward(self, data, device):
+        # Move all tensors to the specified device
+        x = torch.ones((data.num_nodes, 1), device=device)  # Placeholder node embeddings
+        edge_index = data.edge_index.to(device)
+        weight = data.weight.to(device)
+        kmer = data.kmer.to(device)
+        batch = data.batch.to(device)
+
+        # Concatenate edge features (weight + kmer) to form a 5D tensor
+        edge_attr = torch.cat([weight.view(-1, 1), kmer], dim=1).to(device).float()  # [num_edges, 5]
+
+        # Graph Convolutions
+        x = self.conv1(x, edge_index, edge_attr)
+        x = F.leaky_relu(x)
+        # Graph-level representation via global pooling
+        graph_embedding = global_mean_pool(x, batch)
+        graph_embedding = self.project(graph_embedding.T).T
+        return graph_embedding.unsqueeze(0)
+
+
 
 
 class DataEmbedding_inverted(nn.Module):

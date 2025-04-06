@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.fft
-from layers.Embed import DataEmbedding
+from layers.Embed import DataEmbedding, GraphEncoder
 from layers.Conv_Blocks import Inception_Block_V1
 
 
@@ -19,17 +19,17 @@ def FFT_for_Period(x, k=2):
 
 
 class TimesBlock(nn.Module):
-    def __init__(self, configs):
+    def __init__(self, configs, d_graph):
         super(TimesBlock, self).__init__()
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         self.k = configs.top_k
         # parameter-efficient design
         self.conv = nn.Sequential(
-            Inception_Block_V1(configs.d_model, configs.d_ff,
+            Inception_Block_V1(configs.d_model + d_graph, configs.d_ff,
                                num_kernels=configs.num_kernels),
             nn.GELU(),
-            Inception_Block_V1(configs.d_ff, configs.d_model,
+            Inception_Block_V1(configs.d_ff, configs.d_model + d_graph,
                                num_kernels=configs.num_kernels)
         )
 
@@ -76,21 +76,30 @@ class Model(nn.Module):
     def __init__(self, configs):
         super(Model, self).__init__()
         self.configs = configs
+
+        # dBG Params
+        self.dBG = configs.dBG
+        self.disc = configs.disc
+        self.k = configs.k
+        self.d_graph = configs.d_graph if self.dBG else 0
+
         self.task_name = configs.task_name
         self.seq_len = configs.seq_len
         self.label_len = configs.label_len
         self.pred_len = configs.pred_len
-        self.model = nn.ModuleList([TimesBlock(configs)
+        self.model = nn.ModuleList([TimesBlock(configs, self.d_graph)
                                     for _ in range(configs.e_layers)])
         self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq,
                                            configs.dropout)
         self.layer = configs.e_layers
-        self.layer_norm = nn.LayerNorm(configs.d_model)
+        self.layer_norm = nn.LayerNorm(configs.d_model + self.d_graph)
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
+            if self.dBG:
+                self.dbg_encoder = GraphEncoder(self.k, self.d_graph, self.seq_len)
             self.predict_linear = nn.Linear(
                 self.seq_len, self.pred_len + self.seq_len)
             self.projection = nn.Linear(
-                configs.d_model, configs.c_out, bias=True)
+                configs.d_model + self.d_graph, configs.c_out, bias=True)
         if self.task_name == 'imputation' or self.task_name == 'anomaly_detection':
             self.projection = nn.Linear(
                 configs.d_model, configs.c_out, bias=True)
@@ -98,9 +107,9 @@ class Model(nn.Module):
             self.act = F.gelu
             self.dropout = nn.Dropout(configs.dropout)
             self.projection = nn.Linear(
-                configs.d_model * configs.seq_len, configs.num_class)
+                (configs.d_model + self.d_graph) * configs.seq_len, configs.num_class)
 
-    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, x_dbg):
         # Normalization from Non-stationary Transformer
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
@@ -110,6 +119,11 @@ class Model(nn.Module):
 
         # embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [B,T,C]
+
+        if self.dBG:
+            dbg_enc = self.dbg_encoder(x_dbg, x_enc.device)
+            enc_out = torch.cat((enc_out, dbg_enc), dim=-1)
+
         enc_out = self.predict_linear(enc_out.permute(0, 2, 1)).permute(
             0, 2, 1)  # align temporal dimension
         # TimesNet
@@ -198,9 +212,9 @@ class Model(nn.Module):
         output = self.projection(output)  # (batch_size, num_classes)
         return output
 
-    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
+    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, x_dbg, mask=None):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec, x_dbg)
             return dec_out[:, -self.pred_len:, :]  # [B, L, D]
         if self.task_name == 'imputation':
             dec_out = self.imputation(

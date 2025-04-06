@@ -1,17 +1,22 @@
+import glob
 import os
+import re
+import warnings
+
 import numpy as np
 import pandas as pd
-import glob
-import re
 import torch
-from torch.utils.data import Dataset, DataLoader
-from sklearn.preprocessing import StandardScaler
-from utils.timefeatures import time_features
+from sklearn.preprocessing import StandardScaler, KBinsDiscretizer
+from sktime.datasets import load_from_tsfile_to_dataframe
+from torch.utils.data import Dataset
+from torch_geometric.data import Batch
+
+from dBG.MultiDeBruijnGraph import MultivariateDeBruijnGraph
+from dBG.dBGSampler import dBGNeighborLoader
 from data_provider.m4 import M4Dataset, M4Meta
 from data_provider.uea import subsample, interpolate_missing, Normalizer
-from sktime.datasets import load_from_tsfile_to_dataframe
-import warnings
 from utils.augmentation import run_augmentation_single
+from utils.timefeatures import time_features
 
 warnings.filterwarnings('ignore')
 
@@ -79,7 +84,7 @@ class Dataset_ETT_hour(Dataset):
             data_stamp = df_stamp.drop(['date'], 1).values
         elif self.timeenc == 1:
             data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
-            data_stamp = data_stamp.transpose(1, 0) 
+            data_stamp = data_stamp.transpose(1, 0)
 
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
@@ -107,6 +112,40 @@ class Dataset_ETT_hour(Dataset):
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
+
+
+class dBG_Dataset:
+    def __init__(self, k, dimensions, disc, train_data, num_neighbors):
+        self.k = k
+        self.dimensions = dimensions
+        self.dBG = MultivariateDeBruijnGraph(
+            k=self.k,
+            dimensions=self.dimensions,
+            disc_functions=[KBinsDiscretizer(n_bins=disc,
+                                             encode='ordinal',
+                                             strategy='quantile')])
+        self.dBG.insert(train_data)
+        print(self.dBG)
+        self.sampler = dBGNeighborLoader(self.dBG, num_neighbors)
+
+    def neighbor_load(self, seq_x):
+        assert len(seq_x) == 1, f'Only batch size of 1 supported. Got: {len(seq_x)}'
+        batch_samples = list()
+        samples = list()
+        k_1 = self.k - 1
+        batch_x = seq_x[0]
+        for i in range(len(batch_x) - k_1 + 1):
+            k_1_mer = batch_x[i:i + k_1]
+            discrete_seq_x = [None] * self.dimensions
+            for j, dim in enumerate(k_1_mer.T):
+                values = np.array(dim).reshape(-1, 1)
+                discrete_seq_x[j] = self.dBG.discretizers[j].transform(values).astype(int).flatten()
+            discrete_seq_x = torch.tensor(discrete_seq_x)
+            samples.append(self.sampler.sample(discrete_seq_x))# Returns Data object
+
+        samples = Batch.from_data_list(samples)
+        batch_samples.append(samples)
+        return batch_samples
 
 
 class Dataset_ETT_minute(Dataset):
@@ -676,7 +715,7 @@ class UEAloader(Dataset):
             data_paths = list(filter(lambda x: re.search(flag, x), data_paths))
         input_paths = [p for p in data_paths if os.path.isfile(p) and p.endswith('.ts')]
         if len(input_paths) == 0:
-            pattern='*.ts'
+            pattern = '*.ts'
             raise Exception("No .ts files found using pattern: '{}'".format(pattern))
 
         all_df, labels_df = self.load_single(input_paths[0])  # a single file contains dataset
@@ -685,7 +724,7 @@ class UEAloader(Dataset):
 
     def load_single(self, filepath):
         df, labels = load_from_tsfile_to_dataframe(filepath, return_separate_X_and_y=True,
-                                                             replace_missing_vals_with='NaN')
+                                                   replace_missing_vals_with='NaN')
         labels = pd.Series(labels, dtype="category")
         self.class_names = labels.cat.categories
         labels_df = pd.DataFrame(labels.cat.codes,
@@ -742,7 +781,7 @@ class UEAloader(Dataset):
             batch_x = batch_x.reshape((1 * seq_len, num_columns))
 
         return self.instance_norm(torch.from_numpy(batch_x)), \
-               torch.from_numpy(labels)
+            torch.from_numpy(labels)
 
     def __len__(self):
         return len(self.all_IDs)
