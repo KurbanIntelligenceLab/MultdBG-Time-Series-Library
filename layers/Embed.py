@@ -1,7 +1,10 @@
 import math
 
+import torch
 import torch.nn as nn
-from triton.language import dtype
+import torch.nn.functional as F
+from torch.nn import Sequential, Linear, ReLU
+from torch_geometric.nn import GINEConv, global_mean_pool
 
 
 class PositionalEmbedding(nn.Module):
@@ -125,47 +128,95 @@ class DataEmbedding(nn.Module):
         return self.dropout(x)
 
 
-import torch
-import torch.nn.functional as F
-from torch.nn import Sequential, Linear, ReLU
-from torch_geometric.nn import GINEConv, global_mean_pool
-
-class GraphEncoder(torch.nn.Module):
-    def __init__(self, k, d_graph, seq_len):
+class GraphEncoder(nn.Module):
+    def __init__(self, k, d_graph, seq_len, global_dbg=None, num_heads=4):
+        """
+        Args:
+            k (int): k-mer length.
+            d_graph (int): Dimension used in the graph embedding.
+            seq_len (int): Length of the input sequence.
+            global_dbg: Global dBG graph (PyG Data object) to be fused with local subgraphs.
+            num_heads (int): Number of attention heads for the fusion.
+        """
         super(GraphEncoder, self).__init__()
+        self.global_dbg = global_dbg  # Store global dBG for later use
+
         edge_feat_cnt = k + 1
-        # MLP for edge features (5D: weight + kmer)
-        edge_mlp = Sequential(
-            Linear(edge_feat_cnt, d_graph),  # Map (1D weight + k-D kmer) → d_model
+
+        # MLP for edge features for local subgraph
+        edge_mlp_local = Sequential(
+            Linear(edge_feat_cnt, d_graph),
             ReLU(),
             Linear(d_graph, d_graph)
         )
+        # MLP for edge features for global graph
+        edge_mlp_global = Sequential(
+            Linear(edge_feat_cnt, d_graph),
+            ReLU(),
+            Linear(d_graph, d_graph)
+        )
+        # Separate GINE convolution layers for local and global graphs
+        self.conv_local = GINEConv(nn=edge_mlp_local, edge_dim=edge_feat_cnt)
+        self.conv_global = GINEConv(nn=edge_mlp_global, edge_dim=edge_feat_cnt)
 
-        # Explicitly set edge_dim=5 since edge features are 5D
-        self.conv1 = GINEConv(nn=edge_mlp, edge_dim=edge_feat_cnt)
-        self.conv2 = GINEConv(nn=edge_mlp, edge_dim=edge_feat_cnt)
+        # Multi-head attention layer for fusion:
+        # The local embedding serves as the query and the global embedding as key/value.
+        self.attention = nn.MultiheadAttention(embed_dim=d_graph, num_heads=num_heads, batch_first=True)
+        # Projection for the attention output (used in a residual connection)
+        self.attn_proj = nn.Linear(d_graph, d_graph)
+        # (Optional) Additional projection layer if further adjustment of final output dimension is needed.
         self.project = nn.Linear(in_features=seq_len - k + 2, out_features=seq_len)
 
-    def forward(self, data, device):
-        # Move all tensors to the specified device
-        x = torch.ones((data.num_nodes, 1), device=device)  # Placeholder node embeddings
-        edge_index = data.edge_index.to(device)
-        weight = data.weight.to(device)
-        kmer = data.kmer.to(device)
-        batch = data.batch.to(device)
+    def forward(self, local_data, device):
+        """
+        Args:
+            local_data: PyG Data object for the local subgraph.
+            device: The device (cpu/gpu) on which to run computations.
+        Returns:
+            fused_embedding: The fused graph-level embedding.
+            attn_weights: The attention weights from the fusion.
+        """
+        # --- Process Local Subgraph ---
+        x_local = torch.ones((local_data.num_nodes, 1), device=device)
+        local_edge_index = local_data.edge_index.to(device)
+        local_weight = local_data.weight.to(device)
+        local_kmer = local_data.kmer.to(device)
+        local_batch = local_data.batch.to(device)
+        local_edge_attr = torch.cat([local_weight.view(-1, 1), local_kmer], dim=1).to(device).float()
 
-        # Concatenate edge features (weight + kmer) to form a 5D tensor
-        edge_attr = torch.cat([weight.view(-1, 1), kmer], dim=1).to(device).float()  # [num_edges, 5]
+        x_local = self.conv_local(x_local, local_edge_index, local_edge_attr)
+        x_local = F.leaky_relu(x_local)
+        local_embedding = global_mean_pool(x_local, local_batch)  # shape: (batch_size, d_graph)
 
-        # Graph Convolutions
-        x = self.conv1(x, edge_index, edge_attr)
-        x = F.leaky_relu(x)
-        # Graph-level representation via global pooling
-        graph_embedding = global_mean_pool(x, batch)
-        graph_embedding = self.project(graph_embedding.T).T
-        return graph_embedding.unsqueeze(0)
+        # --- Process Global Graph ---
+        global_data = self.global_dbg.to(device)
+        x_global = torch.ones((global_data.num_nodes, 1), device=device)
+        global_edge_index = global_data.edge_index.to(device)
+        global_weight = global_data.weight.to(device)
+        global_kmer = global_data.kmer.to(device)
+        # Create a dummy batch vector for the global graph: all nodes belong to the same graph (index 0)
+        global_batch = torch.zeros(global_data.num_nodes, dtype=torch.long, device=device)
+        global_edge_attr = torch.cat([global_weight.view(-1, 1), global_kmer], dim=1).to(device).float()
 
+        x_global = self.conv_global(x_global, global_edge_index, global_edge_attr)
+        x_global = F.leaky_relu(x_global)
+        global_embedding = global_mean_pool(x_global, global_batch)  # shape: (1, d_graph)
 
+        # --- Fuse Local and Global Representations with Multi-Head Attention ---
+        # Expand global embedding so its shape matches the local embedding batch size.
+        # Since the global graph is shared, we repeat it for each local sample.
+        batch_size = local_embedding.shape[0]
+        global_embedding_expanded = global_embedding.repeat(batch_size, 1)  # shape: (batch_size, d_graph)
+
+        query = local_embedding.unsqueeze(1)  # shape: (batch_size, 1, d_graph)
+        key = global_embedding_expanded.unsqueeze(1)  # shape: (batch_size, 1, d_graph)
+        value = global_embedding_expanded.unsqueeze(1)  # shape: (batch_size, 1, d_graph)
+
+        attn_output, attn_weights = self.attention(query, key, value)
+        fused_embedding = query + self.attn_proj(attn_output)
+        fused_embedding = fused_embedding.permute(1, 2, 0)
+        fused_embedding = self.project(fused_embedding).permute(0, 2, 1)
+        return fused_embedding, attn_weights
 
 
 class DataEmbedding_inverted(nn.Module):

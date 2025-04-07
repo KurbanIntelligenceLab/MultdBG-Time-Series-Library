@@ -1,17 +1,20 @@
-from data_provider.data_factory import data_provider
-from data_provider.data_loader import dBG_Dataset
-from exp.exp_basic import Exp_Basic
-from utils.tools import EarlyStopping, adjust_learning_rate, visual
-from utils.metrics import metric
-import torch
-import torch.nn as nn
-from torch import optim
 import os
 import time
 import warnings
+
 import numpy as np
-from utils.dtw_metric import dtw, accelerated_dtw
-from utils.augmentation import run_augmentation, run_augmentation_single
+import torch
+import torch.nn as nn
+import wandb
+from torch import optim
+from torch_geometric.utils import from_networkx
+
+from data_provider.data_factory import data_provider
+from data_provider.data_loader import dBG_Dataset
+from exp.exp_basic import Exp_Basic
+from utils.dtw_metric import accelerated_dtw
+from utils.metrics import metric
+from utils.tools import EarlyStopping, adjust_learning_rate, visual
 
 warnings.filterwarnings('ignore')
 
@@ -82,7 +85,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         train_data, train_loader = self._get_data(flag='train')
         vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
-        dBG_dataset = dBG_Dataset(self.args.k, 7, self.args.disc, train_data.data_x.T, [5, 3])
+        if hasattr(self.model, 'dbg_encoder'):
+            dBG_dataset = dBG_Dataset(self.args.k, 7, self.args.disc, train_data.data_x.T, [5, 3])
+            self.model.dbg_encoder.global_dbg = from_networkx(dBG_dataset.dBG.graph)
+        else:
+            dBG_dataset = None
 
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
@@ -140,11 +147,18 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     loss = criterion(outputs, batch_y)
                     train_loss.append(loss.item())
 
-                if (i + 1) % 100 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                if (i + 1) % 20 == 0:
+                    wandb.log({
+                        "iteration": i + 1,
+                        "epoch": epoch + 1,
+                        "loss": loss.item(),
+                    })
                     speed = (time.time() - time_now) / iter_count
                     left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                    wandb.log({
+                        "speed_s_per_iter": speed,
+                        "estimated_time_left_s": left_time,
+                    })
                     iter_count = 0
                     time_now = time.time()
 
@@ -156,13 +170,21 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     loss.backward()
                     model_optim.step()
 
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            epoch_duration = time.time() - epoch_time
+            wandb.log({
+                "epoch": epoch + 1,
+                "epoch_duration_s": epoch_duration,
+            })
             train_loss = np.average(train_loss)
             vali_loss = self.vali(vali_data, vali_loader, criterion, dBG_dataset)
             test_loss = self.vali(test_data, test_loader, criterion, dBG_dataset)
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            wandb.log({
+                "train_loss": train_loss,
+                "vali_loss": vali_loss,
+                "test_loss": test_loss,
+                "steps_per_epoch": train_steps,
+            })
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")

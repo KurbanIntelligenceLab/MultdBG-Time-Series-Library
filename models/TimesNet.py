@@ -121,7 +121,7 @@ class Model(nn.Module):
         enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [B,T,C]
 
         if self.dBG:
-            dbg_enc = self.dbg_encoder(x_dbg, x_enc.device)
+            dbg_enc, _ = self.dbg_encoder(x_dbg, x_enc.device)
             enc_out = torch.cat((enc_out, dbg_enc), dim=-1)
 
         enc_out = self.predict_linear(enc_out.permute(0, 2, 1)).permute(

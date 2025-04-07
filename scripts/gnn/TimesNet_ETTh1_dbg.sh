@@ -2,7 +2,7 @@ export CUDA_VISIBLE_DEVICES=2
 
 model_name=TimesNet
 
-python -u run.py \
+nohup python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
@@ -20,9 +20,13 @@ python -u run.py \
   --enc_in 7 \
   --dec_in 7 \
   --c_out 7 \
-  --d_model 32 \
+  --d_model 16 \
   --d_ff 32 \
   --des 'Exp' \
   --itr 1 \
   --top_k 5 \
-  --batch_size 1 > /dev/null 2>&1 &
+  --batch_size 1 \
+  --k 4 \
+  --disc 20 \
+  --d_graph 16 \
+  --dBG > /dev/null 2>&1 &
