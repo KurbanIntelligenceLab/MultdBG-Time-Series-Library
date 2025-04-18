@@ -168,7 +168,7 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print_args(args)
 
-    wandb.init(project="MultidBG", name='Timesnet_attn_test_original', config=vars(args))
+    wandb.init(project="MultidBG", name='Timesnet_soft_masking', config=vars(args))
 
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast

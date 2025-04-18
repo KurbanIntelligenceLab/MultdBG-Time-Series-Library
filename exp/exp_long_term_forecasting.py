@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 import wandb
 from torch import optim
-from torch_geometric.utils import from_networkx
 
 from data_provider.data_factory import data_provider
 from data_provider.data_loader import dBG_Dataset
@@ -15,6 +14,7 @@ from exp.exp_basic import Exp_Basic
 from utils.dtw_metric import accelerated_dtw
 from utils.metrics import metric
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
+from torch_geometric.data import Batch
 
 warnings.filterwarnings('ignore')
 
@@ -41,7 +41,27 @@ class Exp_Long_Term_Forecast(Exp_Basic):
     def _select_criterion(self):
         criterion = nn.MSELoss()
         return criterion
- 
+
+    def init_dbg_encoder(self, train_data, dimensions):
+        dBG_dataset = dBG_Dataset(self.args.k, dimensions, self.args.disc, train_data.data_x.T, [5, 3], self.device)
+        data = dBG_dataset.data
+        weight = data.weight.to(self.device)
+        kmer = data.kmer.to(self.device)
+        edge_attr = torch.cat([weight.view(-1, 1), kmer], dim=1).float()
+        node_count = dBG_dataset.dBG.graph.number_of_nodes()
+        data_list = []
+
+        for i in range(self.args.batch_size):
+            d = data.clone()
+            d.x = torch.ones(node_count, 1)
+            d.edge_attr = edge_attr
+            data_list.append(d)
+
+        batch = Batch.from_data_list(data_list).to(self.device)
+        # Probably not the best way of doing this...
+        self.model.dbg_encoder.data_batch = batch
+        self.model.dbg_encoder.project = nn.Linear(in_features=node_count, out_features=self.args.seq_len).to(self.device)
+        return dBG_dataset
 
     def vali(self, vali_data, vali_loader, criterion, dBG_dataset):
         total_loss = []
@@ -49,9 +69,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
                 if self.args.dBG:
-                    batch_dbg = dBG_dataset.neighbor_load(batch_x)[0]
+                    dbg_mask = dBG_dataset.generate_mask(batch_x)
                 else:
-                    batch_dbg = None
+                    dbg_mask = None
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
 
@@ -64,9 +84,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_dbg)
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, dbg_mask)
                 else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_dbg)
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, dbg_mask)
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
@@ -85,9 +105,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         train_data, train_loader = self._get_data(flag='train')
         vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
+
         if hasattr(self.model, 'dbg_encoder'):
-            dBG_dataset = dBG_Dataset(self.args.k, 7, self.args.disc, train_data.data_x.T, [5, 3])
-            self.model.dbg_encoder.global_dbg = from_networkx(dBG_dataset.dBG.graph)
+            dBG_dataset = self.init_dbg_encoder(train_data, 7)
         else:
             dBG_dataset = None
 
@@ -114,9 +134,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             epoch_time = time.time()
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
                 if self.args.dBG:
-                    batch_dbg = dBG_dataset.neighbor_load(batch_x)[0]
+                    dbg_mask = dBG_dataset.generate_mask(batch_x)
                 else:
-                    batch_dbg = None
+                    dbg_mask = None
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -131,7 +151,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_dbg)
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, dbg_mask)
 
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -139,14 +159,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
                 else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_dbg)
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, dbg_mask)
 
                     f_dim = -1 if self.args.features == 'MS' else 0
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                     loss = criterion(outputs, batch_y)
                     train_loss.append(loss.item())
-
                 if (i + 1) % 20 == 0:
                     wandb.log({
                         "iteration": i + 1,
@@ -213,9 +232,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
                 if self.args.dBG:
-                    batch_dbg = dBG_dataset.neighbor_load(batch_x)[0]
+                    dbg_mask = dBG_dataset.generate_mask(batch_x)
                 else:
-                    batch_dbg = None
+                    dbg_mask = None
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
 
@@ -228,9 +247,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_dbg)
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, dbg_mask)
                 else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_dbg)
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, dbg_mask)
 
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, :]

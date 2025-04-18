@@ -12,11 +12,12 @@ from torch.utils.data import Dataset
 from torch_geometric.data import Batch
 
 from dBG.MultiDeBruijnGraph import MultivariateDeBruijnGraph
-from dBG.dBGSampler import dBGNeighborLoader
+from dBG.dBGSampler import dBGNeighborLoader, dBGMasker
 from data_provider.m4 import M4Dataset, M4Meta
 from data_provider.uea import subsample, interpolate_missing, Normalizer
 from utils.augmentation import run_augmentation_single
 from utils.timefeatures import time_features
+from torch_geometric.utils import from_networkx
 
 warnings.filterwarnings('ignore')
 
@@ -115,7 +116,7 @@ class Dataset_ETT_hour(Dataset):
 
 
 class dBG_Dataset:
-    def __init__(self, k, dimensions, disc, train_data, num_neighbors):
+    def __init__(self, k, dimensions, disc, train_data, num_neighbors, device):
         self.k = k
         self.dimensions = dimensions
         self.dBG = MultivariateDeBruijnGraph(
@@ -127,6 +128,29 @@ class dBG_Dataset:
         self.dBG.insert(train_data)
         print(self.dBG)
         self.sampler = dBGNeighborLoader(self.dBG, num_neighbors)
+        self.dBGMasker = dBGMasker(self.dBG)
+        self.data = from_networkx(self.dBG.graph)
+        self.device = device
+
+    def generate_mask(self, seq_x):
+        # seq_x shape: (B, T, D)
+        B, T, D = seq_x.shape
+        masks = []
+
+        for b in range(B):
+            # shape: (T, D) → (D, T) for per-dim access
+            seq_bt = seq_x[b]  # shape (T, D)
+
+            # Discretize each dimension using its corresponding discretizer
+            disc_seq = np.stack([
+                self.dBG.discretizers[dim].transform(seq_bt[:, dim].reshape(-1, 1)).flatten().astype(int)
+                for dim in range(D)
+            ])
+
+            mask = self.dBGMasker.generate_mask(disc_seq)
+            masks.append(mask)
+        masks = torch.tensor(masks).to(self.device)
+        return masks
 
     def neighbor_load(self, seq_x):
         assert len(seq_x) == 1, f'Only batch size of 1 supported. Got: {len(seq_x)}'

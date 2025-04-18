@@ -109,7 +109,7 @@ class Model(nn.Module):
             self.projection = nn.Linear(
                 (configs.d_model + self.d_graph) * configs.seq_len, configs.num_class)
 
-    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, x_dbg):
+    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask):
         # Normalization from Non-stationary Transformer
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
@@ -121,7 +121,7 @@ class Model(nn.Module):
         enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [B,T,C]
 
         if self.dBG:
-            dbg_enc, _ = self.dbg_encoder(x_dbg, x_enc.device)
+            dbg_enc = self.dbg_encoder(dbg_mask, x_enc.device)
             enc_out = torch.cat((enc_out, dbg_enc), dim=-1)
 
         enc_out = self.predict_linear(enc_out.permute(0, 2, 1)).permute(
@@ -212,9 +212,9 @@ class Model(nn.Module):
         output = self.projection(output)  # (batch_size, num_classes)
         return output
 
-    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, x_dbg, mask=None):
+    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask, mask=None):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec, x_dbg)
+            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask)
             return dec_out[:, -self.pred_len:, :]  # [B, L, D]
         if self.task_name == 'imputation':
             dec_out = self.imputation(
