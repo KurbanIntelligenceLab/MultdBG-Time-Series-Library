@@ -64,7 +64,7 @@ class MultivariateDeBruijnGraph:
             self.__add_hyper_edges(updated_suffix_nodes)
 
         for u, v in self.graph.edges:
-            self.graph[u][v].pop('raw', None)  # Removes 'weight' if it exists
+            self.graph[u][v].pop('raw', None)
 
     def __add_edge(self, source: tuple, target: tuple, edge_attributes: dict, raw: list = None):
         if not self.graph.has_edge(source, target):

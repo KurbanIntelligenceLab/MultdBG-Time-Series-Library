@@ -1,5 +1,5 @@
 import random
-
+import time
 import networkx as nx
 import numpy as np
 from scipy.sparse.csgraph import dijkstra
@@ -16,12 +16,22 @@ class dBGMasker:
         self.G_relabel = nx.relabel_nodes(self.dBG.graph, self.str_to_idx)
 
         self.n_nodes = len(self.G_relabel)
+
+        inv_weight_graph = self.G_relabel.copy()
+        all_weights = [d['weight'] for _, _, d in inv_weight_graph.edges(data=True)]
+        w_max = max(all_weights)
+
+        for u, v, d in inv_weight_graph.edges(data=True):
+            d['weight'] = (w_max - d['weight']) + 1e-6
+
+        self.w_max = max(inv_weight_graph)
         self.adj = nx.to_scipy_sparse_array(
-            self.G_relabel,
+            inv_weight_graph,
             nodelist=range(self.n_nodes),
             weight='weight',
             format='csr'
         )
+
         self.similar_node_cache = {}
 
     def generate_mask(self, values):
@@ -58,10 +68,13 @@ class dBGMasker:
 
         return mask
 
-    def __gaussian_mask(self, idxs, sigma=1.0):
-        dist_matrix = dijkstra(csgraph=self.adj, directed=True, indices=idxs)
-        min_distances = np.min(dist_matrix, axis=0)
-        mask = np.exp(- (min_distances ** 2) / (2 * sigma ** 2))
+    def __gaussian_mask(self, idxs, sigma=100, limit=0.05):
+        dist_matrix = dijkstra(csgraph=self.adj,
+                               directed=True,
+                               unweighted=False,
+                               indices=idxs,
+                               min_only=True)
+        mask = np.exp(- (dist_matrix ** 2) / (2 * sigma ** 2))
         return {i: float(mask[i]) for i in range(self.n_nodes)}
 
 

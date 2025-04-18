@@ -95,7 +95,7 @@ class Model(nn.Module):
         self.layer_norm = nn.LayerNorm(configs.d_model + self.d_graph)
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
             if self.dBG:
-                self.dbg_encoder = GraphEncoder(self.k, self.d_graph, self.seq_len)
+                self.dbg_encoder = GraphEncoder(self.d_graph, self.seq_len)
             self.predict_linear = nn.Linear(
                 self.seq_len, self.pred_len + self.seq_len)
             self.projection = nn.Linear(

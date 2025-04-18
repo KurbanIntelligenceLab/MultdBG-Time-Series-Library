@@ -2,11 +2,8 @@ import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn import Sequential, Linear
-from torch_geometric.nn import GINEConv, global_mean_pool
-from torch.nn import LeakyReLU  # NOT from torch.nn.quantized
-from torch_geometric.data import Batch
+from torch_geometric.nn import GATConv
+
 
 class PositionalEmbedding(nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -130,31 +127,28 @@ class DataEmbedding(nn.Module):
 
 
 class GraphEncoder(nn.Module):
-    def __init__(self, k, d_graph, seq_len, data_batch=None):
+    def __init__(self, d_graph, seq_len, data_batch=None, heads=3):
         super(GraphEncoder, self).__init__()
-        edge_feat_dim = k + 1  # weight + kmer
-
-        self.edge_mlp = Sequential(
-            Linear(edge_feat_dim, d_graph),
-            LeakyReLU(),
+        self.seq_len = seq_len
+        self.d_graph = d_graph
+        self.conv1 = GATConv(
+            in_channels=1,
+            out_channels=self.d_graph // heads,
+            heads=heads,
+            concat=True
         )
-
-        self.conv1 = GINEConv(nn=self.edge_mlp, edge_dim=edge_feat_dim)
-        self.pool = nn.AdaptiveAvgPool1d(1)
-        if data_batch is not None:
-            self.data_batch = data_batch
-            self.project = None
-        else:
-            self.data_batch = None
-            self.project = None
+        self.project = None # Gets initialized externally after graph generation
+        self.temp_project = nn.Linear((d_graph // heads) * heads, d_graph)
+        self.data_batch = data_batch if data_batch is not None else None
 
     def forward(self, mask, device):
         B, N = mask.shape
         for i in range(B):
             self.data_batch[i].x = mask[i].unsqueeze(-1)
-        x = self.conv1(self.data_batch.x, self.data_batch.edge_index, self.data_batch.edge_attr)
+        x = self.conv1(self.data_batch.x, self.data_batch.edge_index)
         x = x.reshape(B, N, -1)
         x = self.project(x.permute(0, 2, 1)).permute(0, 2, 1)
+        x = self.temp_project(x)
         return x
 
 
