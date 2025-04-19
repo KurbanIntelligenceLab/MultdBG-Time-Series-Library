@@ -4,6 +4,7 @@ from itertools import combinations
 import networkx as nx
 import numpy as np
 from sklearn.preprocessing import KBinsDiscretizer
+from sklearn.preprocessing import StandardScaler
 
 class MultivariateDeBruijnGraph:
     def __init__(self,
@@ -65,6 +66,15 @@ class MultivariateDeBruijnGraph:
 
         for u, v in self.graph.edges:
             self.graph[u][v].pop('raw', None)
+
+        k_1_mers = list()
+        for n in self.graph.nodes:
+            k_1_mers.append(n[1])
+        k_1_mers = np.array(k_1_mers)
+        scaler = StandardScaler()
+        k_1_mers = scaler.fit_transform(k_1_mers).astype(np.float32)
+        for node, scaled_feat in zip(self.graph.nodes, k_1_mers):
+            self.graph.nodes[node]['k_1_mer'] = scaled_feat
 
     def __add_edge(self, source: tuple, target: tuple, edge_attributes: dict, raw: list = None):
         if not self.graph.has_edge(source, target):

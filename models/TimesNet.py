@@ -95,7 +95,7 @@ class Model(nn.Module):
         self.layer_norm = nn.LayerNorm(configs.d_model + self.d_graph)
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
             if self.dBG:
-                self.dbg_encoder = GraphEncoder(self.d_graph, self.seq_len)
+                self.dbg_encoder = GraphEncoder(self.k, self.d_graph, self.seq_len)
             self.predict_linear = nn.Linear(
                 self.seq_len, self.pred_len + self.seq_len)
             self.projection = nn.Linear(
@@ -121,7 +121,7 @@ class Model(nn.Module):
         enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [B,T,C]
 
         if self.dBG:
-            dbg_enc = self.dbg_encoder(dbg_mask, x_enc.device)
+            dbg_enc = self.dbg_encoder(x_enc, dbg_mask, x_enc.device)
             enc_out = torch.cat((enc_out, dbg_enc), dim=-1)
 
         enc_out = self.predict_linear(enc_out.permute(0, 2, 1)).permute(

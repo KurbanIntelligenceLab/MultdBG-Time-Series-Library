@@ -61,6 +61,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # Probably not the best way of doing this...
         self.model.dbg_encoder.data_batch = batch
         self.model.dbg_encoder.project = nn.Linear(in_features=node_count, out_features=self.args.seq_len).to(self.device)
+        self.model.dbg_encoder.query_proj = nn.Linear(self.args.seq_len, node_count).to(self.device)
         return dBG_dataset
 
     def vali(self, vali_data, vali_loader, criterion, dBG_dataset):
