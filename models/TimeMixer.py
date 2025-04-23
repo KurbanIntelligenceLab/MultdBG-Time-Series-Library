@@ -195,6 +195,10 @@ class Model(nn.Module):
         self.pred_len = configs.pred_len
         self.down_sampling_window = configs.down_sampling_window
         self.channel_independence = configs.channel_independence
+        self.dBG = configs.dBG
+        if self.dBG:
+            self.dbg_encoder = configs.graph_encoder
+
         self.pdm_blocks = nn.ModuleList([PastDecomposableMixing(configs)
                                          for _ in range(configs.e_layers)])
 
@@ -326,7 +330,7 @@ class Model(nn.Module):
 
         return x_enc, x_mark_enc
 
-    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask):
 
         x_enc, x_mark_enc = self.__multi_scale_process_inputs(x_enc, x_mark_enc)
 
@@ -358,10 +362,16 @@ class Model(nn.Module):
         if x_mark_enc is not None:
             for i, x, x_mark in zip(range(len(x_list[0])), x_list[0], x_mark_list):
                 enc_out = self.enc_embedding(x, x_mark)  # [B,T,C]
+                if self.dBG:
+                    dbg_enc = self.dbg_encoder(x_enc, dbg_mask)  # [B, S, dBG]
+                    x_enc = torch.cat((x_enc, dbg_enc), dim=-1)
                 enc_out_list.append(enc_out)
         else:
             for i, x in zip(range(len(x_list[0])), x_list[0]):
                 enc_out = self.enc_embedding(x, None)  # [B,T,C]
+                if self.dBG:
+                    dbg_enc = self.dbg_encoder(x_enc, dbg_mask)  # [B, S, dBG]
+                    x_enc = torch.cat((x_enc, dbg_enc), dim=-1)
                 enc_out_list.append(enc_out)
 
         # Past Decomposable Mixing as encoder for past
@@ -501,7 +511,7 @@ class Model(nn.Module):
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec, mask)
             return dec_out
         if self.task_name == 'imputation':
             dec_out = self.imputation(x_enc, x_mark_enc, mask)
