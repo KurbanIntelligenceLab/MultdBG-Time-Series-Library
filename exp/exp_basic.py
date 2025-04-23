@@ -1,9 +1,14 @@
 import os
 import torch
+
+from dBG.GraphEncoder import GraphEncoder
+from data_provider.data_loader import dBG_Dataset
 from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
     WPMixer, MultiPatchFormer
+from torch_geometric.data import Batch
+from data_provider.data_factory import data_provider
 
 
 class Exp_Basic(object):
@@ -46,7 +51,37 @@ class Exp_Basic(object):
             self.model_dict['Mamba'] = Mamba
 
         self.device = self._acquire_device()
+        if self.args.dBG:
+            self.init_dbg_encoder()
         self.model = self._build_model().to(self.device)
+
+
+    def init_dbg_encoder(self):
+        data_set, _ = data_provider(self.args, 'train')
+        data_dim = data_set[0][0].shape[1]
+        dBG_dataset = dBG_Dataset(self.args.k, data_dim, self.args.disc, data_set.data_x.T, [5, 3], self.device)
+        data = dBG_dataset.data
+        weight = data.weight.to(self.device)
+        kmer = data.kmer.to(self.device)
+        edge_attr = torch.cat([weight.view(-1, 1), kmer], dim=1).float()
+        node_count = dBG_dataset.dBG.graph.number_of_nodes()
+        data_list = []
+
+        for i in range(self.args.batch_size):
+            d = data.clone()
+            d.x = torch.ones(node_count, 1)
+            d.edge_attr = edge_attr
+            data_list.append(d)
+
+        batch = Batch.from_data_list(data_list).to(self.device)
+        dbg_encoder = GraphEncoder(k=self.args.k,
+                                   d_graph=self.args.d_graph,
+                                   d_data=data_dim,
+                                   data_batch=batch,
+                                   seq_len=self.args.seq_len,
+                                   node_count=node_count)
+        self.dBG_dataset = dBG_dataset
+        self.args.graph_encoder = dbg_encoder
 
     def _build_model(self):
         raise NotImplementedError

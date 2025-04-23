@@ -1,9 +1,10 @@
 import torch
+import torch.fft
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.fft
-from layers.Embed import DataEmbedding, GraphEncoder
+
 from layers.Conv_Blocks import Inception_Block_V1
+from layers.Embed import DataEmbedding
 
 
 def FFT_for_Period(x, k=2):
@@ -89,13 +90,17 @@ class Model(nn.Module):
         self.pred_len = configs.pred_len
         self.model = nn.ModuleList([TimesBlock(configs, self.d_graph)
                                     for _ in range(configs.e_layers)])
-        self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq,
-                                           configs.dropout)
+        if self.dBG:
+            self.dbg_encoder = configs.graph_encoder
+
+        self.enc_embedding = DataEmbedding(c_in=configs.enc_in,
+                                           d_model=configs.d_model,
+                                           embed_type=configs.embed,
+                                           freq=configs.freq,
+                                           dropout=configs.dropout)
         self.layer = configs.e_layers
         self.layer_norm = nn.LayerNorm(configs.d_model + self.d_graph)
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            if self.dBG:
-                self.dbg_encoder = GraphEncoder(self.k, self.d_graph, self.seq_len)
             self.predict_linear = nn.Linear(
                 self.seq_len, self.pred_len + self.seq_len)
             self.projection = nn.Linear(
@@ -110,6 +115,7 @@ class Model(nn.Module):
                 (configs.d_model + self.d_graph) * configs.seq_len, configs.num_class)
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask):
+        raw_x_enc = x_enc.clone()
         # Normalization from Non-stationary Transformer
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
@@ -121,7 +127,7 @@ class Model(nn.Module):
         enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [B,T,C]
 
         if self.dBG:
-            dbg_enc = self.dbg_encoder(x_enc, dbg_mask, x_enc.device)
+            dbg_enc = self.dbg_encoder(raw_x_enc, dbg_mask)
             enc_out = torch.cat((enc_out, dbg_enc), dim=-1)
 
         enc_out = self.predict_linear(enc_out.permute(0, 2, 1)).permute(
@@ -132,13 +138,14 @@ class Model(nn.Module):
         # porject back
         dec_out = self.projection(enc_out)
 
+
         # De-Normalization from Non-stationary Transformer
         dec_out = dec_out * \
-                  (stdev[:, 0, :].unsqueeze(1).repeat(
-                      1, self.pred_len + self.seq_len, 1))
+                      (stdev[:, 0, :].unsqueeze(1).repeat(
+                          1, self.pred_len + self.seq_len, 1))
         dec_out = dec_out + \
-                  (means[:, 0, :].unsqueeze(1).repeat(
-                      1, self.pred_len + self.seq_len, 1))
+                      (means[:, 0, :].unsqueeze(1).repeat(
+                          1, self.pred_len + self.seq_len, 1))
         return dec_out
 
     def imputation(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask):

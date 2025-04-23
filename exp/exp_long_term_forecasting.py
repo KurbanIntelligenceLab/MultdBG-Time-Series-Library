@@ -9,12 +9,10 @@ import wandb
 from torch import optim
 
 from data_provider.data_factory import data_provider
-from data_provider.data_loader import dBG_Dataset
 from exp.exp_basic import Exp_Basic
 from utils.dtw_metric import accelerated_dtw
 from utils.metrics import metric
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
-from torch_geometric.data import Batch
 
 warnings.filterwarnings('ignore')
 
@@ -42,35 +40,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         criterion = nn.MSELoss()
         return criterion
 
-    def init_dbg_encoder(self, train_data, dimensions):
-        dBG_dataset = dBG_Dataset(self.args.k, dimensions, self.args.disc, train_data.data_x.T, [5, 3], self.device)
-        data = dBG_dataset.data
-        weight = data.weight.to(self.device)
-        kmer = data.kmer.to(self.device)
-        edge_attr = torch.cat([weight.view(-1, 1), kmer], dim=1).float()
-        node_count = dBG_dataset.dBG.graph.number_of_nodes()
-        data_list = []
-
-        for i in range(self.args.batch_size):
-            d = data.clone()
-            d.x = torch.ones(node_count, 1)
-            d.edge_attr = edge_attr
-            data_list.append(d)
-
-        batch = Batch.from_data_list(data_list).to(self.device)
-        # Probably not the best way of doing this...
-        self.model.dbg_encoder.data_batch = batch
-        self.model.dbg_encoder.project = nn.Linear(in_features=node_count, out_features=self.args.seq_len).to(self.device)
-        self.model.dbg_encoder.query_proj = nn.Linear(self.args.seq_len, node_count).to(self.device)
-        return dBG_dataset
-
-    def vali(self, vali_data, vali_loader, criterion, dBG_dataset):
+    def vali(self, vali_data, vali_loader, criterion):
         total_loss = []
         self.model.eval()
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
                 if self.args.dBG:
-                    dbg_mask = dBG_dataset.generate_mask(batch_x)
+                    dbg_mask = self.dBG_dataset.generate_mask(batch_x)
                 else:
                     dbg_mask = None
                 batch_x = batch_x.float().to(self.device)
@@ -107,11 +83,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
 
-        if hasattr(self.model, 'dbg_encoder'):
-            dBG_dataset = self.init_dbg_encoder(train_data, 7)
-        else:
-            dBG_dataset = None
-
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -135,7 +106,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             epoch_time = time.time()
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
                 if self.args.dBG:
-                    dbg_mask = dBG_dataset.generate_mask(batch_x)
+                    dbg_mask = self.dBG_dataset.generate_mask(batch_x)
                 else:
                     dbg_mask = None
                 iter_count += 1
@@ -196,8 +167,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 "epoch_duration_s": epoch_duration,
             })
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion, dBG_dataset)
-            test_loss = self.vali(test_data, test_loader, criterion, dBG_dataset)
+            vali_loss = self.vali(vali_data, vali_loader, criterion)
+            test_loss = self.vali(test_data, test_loader, criterion)
 
             wandb.log({
                 "train_loss": train_loss,
@@ -215,9 +186,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
 
-        return self.model, dBG_dataset
+        return self.model
 
-    def test(self, setting, dBG_dataset, test=0):
+    def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
         if test:
             print('loading model')
@@ -233,7 +204,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
                 if self.args.dBG:
-                    dbg_mask = dBG_dataset.generate_mask(batch_x)
+                    dbg_mask = self.dBG_dataset.generate_mask(batch_x)
                 else:
                     dbg_mask = None
                 batch_x = batch_x.float().to(self.device)

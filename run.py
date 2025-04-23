@@ -168,7 +168,7 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print_args(args)
 
-    wandb.init(project="MultidBG", name='Timesnet_inverse_mask_fast_final_withkmer', config=vars(args))
+    wandb.init(project="MultidBG", name='Timesnet_inverse_mask_fast_final_nonnormalized', config=vars(args))
 
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast
@@ -209,10 +209,10 @@ if __name__ == '__main__':
                 args.des, ii)
 
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-            _ ,dBG_dataset = exp.train(setting)
+            exp.train(setting)
 
             print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            exp.test(setting, dBG_dataset)
+            exp.test(setting)
             if args.gpu_type == 'mps':
                 torch.backends.mps.empty_cache()
             elif args.gpu_type == 'cuda':
