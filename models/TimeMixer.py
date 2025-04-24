@@ -362,16 +362,10 @@ class Model(nn.Module):
         if x_mark_enc is not None:
             for i, x, x_mark in zip(range(len(x_list[0])), x_list[0], x_mark_list):
                 enc_out = self.enc_embedding(x, x_mark)  # [B,T,C]
-                if self.dBG:
-                    dbg_enc = self.dbg_encoder(x_enc, dbg_mask)  # [B, S, dBG]
-                    x_enc = torch.cat((x_enc, dbg_enc), dim=-1)
                 enc_out_list.append(enc_out)
         else:
             for i, x in zip(range(len(x_list[0])), x_list[0]):
                 enc_out = self.enc_embedding(x, None)  # [B,T,C]
-                if self.dBG:
-                    dbg_enc = self.dbg_encoder(x_enc, dbg_mask)  # [B, S, dBG]
-                    x_enc = torch.cat((x_enc, dbg_enc), dim=-1)
                 enc_out_list.append(enc_out)
 
         # Past Decomposable Mixing as encoder for past
