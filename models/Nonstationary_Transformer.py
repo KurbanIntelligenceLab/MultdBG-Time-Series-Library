@@ -51,6 +51,15 @@ class Model(nn.Module):
         self.seq_len = configs.seq_len
         self.label_len = configs.label_len
 
+        # dBG Params
+        self.dBG = configs.dBG
+        self.disc = configs.disc
+        self.k = configs.k
+        self.d_graph = configs.d_graph if self.dBG else 0
+        if self.dBG:
+            self.dbg_encoder = configs.graph_encoder
+        self.enc_in_dim = configs.d_model + self.d_graph if self.dBG else configs.d_model
+
         # Embedding
         self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq,
                                            configs.dropout)
@@ -61,18 +70,18 @@ class Model(nn.Module):
                 EncoderLayer(
                     AttentionLayer(
                         DSAttention(False, configs.factor, attention_dropout=configs.dropout,
-                                    output_attention=False), configs.d_model, configs.n_heads),
-                    configs.d_model,
+                                    output_attention=False), self.enc_in_dim, configs.n_heads),
+                    self.enc_in_dim,
                     configs.d_ff,
                     dropout=configs.dropout,
                     activation=configs.activation
                 ) for l in range(configs.e_layers)
             ],
-            norm_layer=torch.nn.LayerNorm(configs.d_model)
+            norm_layer=torch.nn.LayerNorm(self.enc_in_dim)
         )
         # Decoder
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            self.dec_embedding = DataEmbedding(configs.dec_in, configs.d_model, configs.embed, configs.freq,
+            self.dec_embedding = DataEmbedding(configs.dec_in, self.enc_in_dim, configs.embed, configs.freq,
                                                configs.dropout)
             self.decoder = Decoder(
                 [
@@ -80,29 +89,29 @@ class Model(nn.Module):
                         AttentionLayer(
                             DSAttention(True, configs.factor, attention_dropout=configs.dropout,
                                         output_attention=False),
-                            configs.d_model, configs.n_heads),
+                            self.enc_in_dim, configs.n_heads),
                         AttentionLayer(
                             DSAttention(False, configs.factor, attention_dropout=configs.dropout,
                                         output_attention=False),
-                            configs.d_model, configs.n_heads),
-                        configs.d_model,
+                            self.enc_in_dim, configs.n_heads),
+                        self.enc_in_dim,
                         configs.d_ff,
                         dropout=configs.dropout,
                         activation=configs.activation,
                     )
                     for l in range(configs.d_layers)
                 ],
-                norm_layer=torch.nn.LayerNorm(configs.d_model),
-                projection=nn.Linear(configs.d_model, configs.c_out, bias=True)
+                norm_layer=torch.nn.LayerNorm(self.enc_in_dim),
+                projection=nn.Linear(self.enc_in_dim, configs.c_out, bias=True)
             )
         if self.task_name == 'imputation':
-            self.projection = nn.Linear(configs.d_model, configs.c_out, bias=True)
+            self.projection = nn.Linear(self.enc_in_dim, configs.c_out, bias=True)
         if self.task_name == 'anomaly_detection':
-            self.projection = nn.Linear(configs.d_model, configs.c_out, bias=True)
+            self.projection = nn.Linear(self.enc_in_dim, configs.c_out, bias=True)
         if self.task_name == 'classification':
             self.act = F.gelu
             self.dropout = nn.Dropout(configs.dropout)
-            self.projection = nn.Linear(configs.d_model * configs.seq_len, configs.num_class)
+            self.projection = nn.Linear(self.enc_in_dim * configs.seq_len, configs.num_class)
 
         self.tau_learner = Projector(enc_in=configs.enc_in, seq_len=configs.seq_len, hidden_dims=configs.p_hidden_dims,
                                      hidden_layers=configs.p_hidden_layers, output_dim=1)
@@ -110,7 +119,7 @@ class Model(nn.Module):
                                        hidden_dims=configs.p_hidden_dims, hidden_layers=configs.p_hidden_layers,
                                        output_dim=configs.seq_len)
 
-    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask):
         x_raw = x_enc.clone().detach()
 
         # Normalization
@@ -127,6 +136,11 @@ class Model(nn.Module):
                               dim=1).to(x_enc.device).clone()
 
         enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        #I pasted this part directly so Idk if its true
+        if self.dBG:
+            dbg_enc = self.dbg_encoder(x_enc, dbg_mask)
+            enc_out = torch.cat((enc_out, dbg_enc), dim=-1)
+
         enc_out, attns = self.encoder(enc_out, attn_mask=None, tau=tau, delta=delta)
 
         dec_out = self.dec_embedding(x_dec_new, x_mark_dec)
@@ -202,9 +216,9 @@ class Model(nn.Module):
         output = self.projection(output)
         return output
 
-    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
+    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask, mask=None):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec,dbg_mask)
             return dec_out[:, -self.pred_len:, :]  # [B, L, D]
         if self.task_name == 'imputation':
             dec_out = self.imputation(x_enc, x_mark_enc, x_dec, x_mark_dec, mask)
