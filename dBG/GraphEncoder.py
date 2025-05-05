@@ -2,10 +2,9 @@ import torch
 import torch.nn as nn
 from torch_geometric.nn import GATConv
 
-
-class GraphEncoder(nn.Module):
-    def __init__(self, k, d_graph, seq_len, d_data, graph_data, node_count, device, heads=3):
-        super(GraphEncoder, self).__init__()
+class GraphEncoder_Attn(nn.Module):
+    def __init__(self, k, d_graph, seq_len, d_data, graph_data, node_count, device, heads=3, dropout=0.1):
+        super(GraphEncoder_Attn, self).__init__()
         self.k = k
         self.seq_len = seq_len
         self.d_graph = d_graph
@@ -17,9 +16,8 @@ class GraphEncoder(nn.Module):
         self.temp_project = nn.Linear((self.d_data // heads) * heads, d_graph)
         self.project = nn.Linear(in_features=node_count, out_features=seq_len)
         self.query_proj = nn.Linear(seq_len, node_count)
-
-        self.edge_index = graph_data.edge_index  # store once
-        self.edge_index = self.edge_index.to(device)
+        self.dropout = nn.Dropout(dropout)
+        self.edge_index = graph_data.edge_index.to(device)
 
     def forward(self, x_enc, mask):
         B, N = mask.shape
@@ -33,6 +31,7 @@ class GraphEncoder(nn.Module):
 
         out = self.conv1(x, edge_index)                              # [B*N, DD]
         out = out.view(B, N, -1)                                     # [B, N, DD]
+        out = self.dropout(out)
         out = self.project(out.permute(0, 2, 1)).permute(0, 2, 1)    # [B, N, seq_len]
         out = self.temp_project(out)                                 # [B, N, d_graph]
         return out

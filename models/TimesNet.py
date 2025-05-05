@@ -115,7 +115,6 @@ class Model(nn.Module):
                 (configs.d_model + self.d_graph) * configs.seq_len, configs.num_class)
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask):
-        raw_x_enc = x_enc.clone()
         # Normalization from Non-stationary Transformer
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
@@ -127,7 +126,7 @@ class Model(nn.Module):
         enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [B,T,C]
 
         if self.dBG:
-            dbg_enc = self.dbg_encoder(raw_x_enc, dbg_mask)
+            dbg_enc = self.dbg_encoder(x_enc, dbg_mask)
             enc_out = torch.cat((enc_out, dbg_enc), dim=-1)
 
         enc_out = self.predict_linear(enc_out.permute(0, 2, 1)).permute(

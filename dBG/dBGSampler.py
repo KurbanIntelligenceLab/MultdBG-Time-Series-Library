@@ -1,5 +1,5 @@
 import random
-import time
+
 import networkx as nx
 import numpy as np
 from scipy.sparse.csgraph import dijkstra
@@ -8,13 +8,14 @@ from torch_geometric.utils import from_networkx
 
 
 class dBGMasker:
-    def __init__(self, dBG):
+    def __init__(self, dBG, augment_prob=0.1, augment=True):
         self.dBG = dBG
+        self.augment_prob = augment_prob
+        self.augment = augment
         str_nodes = list(self.dBG.graph.nodes)
         self.str_to_idx = {node: idx for idx, node in enumerate(str_nodes)}
         self.idx_to_str = {idx: node for node, idx in self.str_to_idx.items()}
         self.G_relabel = nx.relabel_nodes(self.dBG.graph, self.str_to_idx)
-
         self.n_nodes = len(self.G_relabel)
 
         inv_weight_graph = self.G_relabel.copy()
@@ -51,15 +52,40 @@ class dBGMasker:
                     min_dist = float('inf')
                     best_match = None
                     for node in self.dBG.graph.nodes:
-                        dist = distance.cityblock(mer, node[1])
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_match = node
+                        if query[0] == node[0]:
+                            dist = distance.cityblock(mer, node[1])
+                            if dist < min_dist:
+                                min_dist = dist
+                                best_match = node
                     if best_match is not None:
                         self.similar_node_cache[query] = best_match
                         selected_nodes.add(best_match)
 
-        selected_idxs = [self.str_to_idx[n] for n in selected_nodes if n in self.str_to_idx]
+        # Make a copy to modify during iteration
+        selected_nodes_augmented = set(selected_nodes)
+
+        if self.augment and self.augment_prob > 0:
+            for node in list(selected_nodes):
+                if random.random() < self.augment_prob:
+                    if node in self.similar_node_cache:
+                        best_match = self.similar_node_cache[node]
+                    else:
+                        min_dist = float('inf')
+                        best_match = None
+                        for candidate in self.dBG.graph.nodes:
+                            if candidate not in selected_nodes_augmented and candidate[0] == node[0]:
+                                dist = distance.cityblock(node[1], candidate[1])
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    best_match = candidate
+                        if best_match is not None:
+                            self.similar_node_cache[node] = best_match
+
+                    if best_match is not None:
+                        selected_nodes_augmented.discard(node)
+                        selected_nodes_augmented.add(best_match)
+
+        selected_idxs = [self.str_to_idx[n] for n in selected_nodes_augmented if n in self.str_to_idx]
         soft_mask = self.__gaussian_mask(selected_idxs)
 
         mask = np.zeros(self.n_nodes, dtype=np.float32)
@@ -76,6 +102,8 @@ class dBGMasker:
                                min_only=True)
         mask = np.exp(- (dist_matrix ** 2) / (2 * sigma ** 2))
         return {i: float(mask[i]) for i in range(self.n_nodes)}
+
+
 
 
 

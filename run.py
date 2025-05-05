@@ -145,7 +145,7 @@ if __name__ == '__main__':
     # dBG_encoder Parameters
     parser.add_argument('--dBG', action="store_true", help='Enable dBG_encoder features')
     parser.add_argument('--k', type=int, default=4, help='k parameter for dBG_encoder')
-    parser.add_argument('--d_graph', type=int, default=32, help='Encoding dims for the dBG_encoder')
+    parser.add_argument('--d_graph', type=int, default=None, help='Encoding dims for the dBG_encoder')
     parser.add_argument('--disc', type=int, default=20, help='Alphabet size for dBG_encoder')
 
     args = parser.parse_args()
@@ -168,7 +168,7 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print_args(args)
 
-    wandb.init(project="MultidBG", name='Timesnet_inverse_mask_fast_final_nonnormalized', config=vars(args))
+    wandb.init(project="ETT_BigSmall_dBG", name='ETT_BigSmall_dBG', config=vars(args))
 
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast
@@ -187,7 +187,8 @@ if __name__ == '__main__':
         for ii in range(args.itr):
             # setting record of experiments
             exp = Exp(args)  # set experiments
-            setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
+            setting = 'dBG_{}_{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
+            args.dBG,
                 args.task_name,
                 args.model_id,
                 args.model,
@@ -220,7 +221,8 @@ if __name__ == '__main__':
     else:
         exp = Exp(args)  # set experiments
         ii = 0
-        setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
+        setting = 'dBG_{}_{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
+            args.dBG,
             args.task_name,
             args.model_id,
             args.model,

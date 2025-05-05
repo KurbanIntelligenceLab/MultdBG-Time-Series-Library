@@ -331,9 +331,24 @@ class Model(nn.Module):
         return x_enc, x_mark_enc
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask):
+        if self.dBG:
+            # Normalization from Non-stationary Transformer
+            means = x_enc.mean(1, keepdim=True).detach()
+            x_enc = x_enc - means
+            stdev = torch.sqrt(
+                torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
+            x_enc /= stdev
 
+            x_enc = self.dbg_encoder(x_enc, dbg_mask).squeeze(-1)
+
+            # De-Normalization from Non-stationary Transformer
+            dec_out = x_enc * \
+                      (stdev[:, 0, :].unsqueeze(1).repeat(
+                          1, self.seq_len, 1))
+            x_enc = dec_out + \
+                      (means[:, 0, :].unsqueeze(1).repeat(
+                          1, self.seq_len, 1))
         x_enc, x_mark_enc = self.__multi_scale_process_inputs(x_enc, x_mark_enc)
-
         x_list = []
         x_mark_list = []
         if x_mark_enc is not None:
