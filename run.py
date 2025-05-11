@@ -168,7 +168,7 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print_args(args)
 
-    wandb.init(project="ETT_BigSmall_dBG", name='ETT_BigSmall_dBG', config=vars(args))
+    wandb.init(project="NARROW", name='ETT_H_Attn', config=vars(args))
 
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast

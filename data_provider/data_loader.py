@@ -119,17 +119,35 @@ class dBG_Dataset:
     def __init__(self, k, dimensions, disc, train_data, num_neighbors, device):
         self.k = k
         self.dimensions = dimensions
+        self.disc = disc
         self.dBG = MultivariateDeBruijnGraph(
             k=self.k,
             dimensions=self.dimensions,
             disc_functions=[KBinsDiscretizer(n_bins=disc,
                                              encode='ordinal',
-                                             strategy='quantile')])
-        self.dBG.insert(train_data)
+                                             strategy='uniform')])
+        node_feats = self.dBG.insert(train_data)
+        self.node_feats = [torch.tensor(v, dtype=torch.float, device=device) for v in node_feats]
+
+        L = len(self.node_feats)
+        K = self.node_feats[0].shape[1]
+        D_max = max(arr.shape[0] for arr in self.node_feats)
+
+        result = torch.empty((L, D_max, K), dtype=self.node_feats[0].dtype, device=self.node_feats[0].device)
+
+        for i, arr in enumerate(self.node_feats):
+            D = arr.shape[0]
+            repeat_count = (D_max + D - 1) // D  # ceil(D_max / D)
+            repeated = arr.repeat((repeat_count, 1))[:D_max]
+            result[i] = repeated
+
+        self.node_feats = result
+
         print(self.dBG)
         self.sampler = dBGNeighborLoader(self.dBG, num_neighbors)
         self.dBGMasker = dBGMasker(self.dBG)
-        self.data = from_networkx(self.dBG.graph)
+        self.dBG.graph.reverse(copy=False)
+        self.data = from_networkx(self.dBG.graph).to(device)
         self.device = device
 
     def generate_mask(self, seq_x):

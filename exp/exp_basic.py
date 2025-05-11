@@ -1,13 +1,13 @@
 import os
 import torch
 
-from dBG.GraphEncoder import GraphEncoder_Attn
+from dBG.GraphEncoder import GraphEncoder_Attn, GraphEncoder_Attn_new
 from data_provider.data_loader import dBG_Dataset
 from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
-    WPMixer, MultiPatchFormer
-
+    WPMixer, MultiPatchFormer, AttentivePooler
+import torch.nn as nn
 from data_provider.data_factory import data_provider
 
 
@@ -43,7 +43,8 @@ class Exp_Basic(object):
             'PAttn': PAttn,
             'TimeXer': TimeXer,
             'WPMixer': WPMixer,
-            'MultiPatchFormer': MultiPatchFormer
+            'MultiPatchFormer': MultiPatchFormer,
+            'dBGAttnPool': AttentivePooler,
         }
         if args.model == 'Mamba':
             print('Please make sure you have successfully installed mamba_ssm')
@@ -59,11 +60,15 @@ class Exp_Basic(object):
     def init_dbg_encoder(self):
         data_set, _ = data_provider(self.args, 'train')
         data_dim = data_set[0][0].shape[1]
-        dBG_dataset = dBG_Dataset(self.args.k, data_dim, self.args.disc, data_set.data_x.T, [5, 3], self.device)
+        scaler = data_set.scaler
+        dBG_dataset1 = dBG_Dataset(self.args.k, data_dim, 20, data_set.data_x.T, [5, 3], self.device)
+        dBG_dataset2 = dBG_Dataset(self.args.k, data_dim, 30, data_set.data_x.T, [5, 3], self.device)
+        dBG_dataset3 = dBG_Dataset(self.args.k, data_dim, 35, data_set.data_x.T, [5, 3], self.device)
+        dBG_datasets = [dBG_dataset1, dBG_dataset2, dBG_dataset3]
 
         if self.args.d_graph is None:
             self.args.d_graph = data_dim
-
+        """
         dbg_encoder = GraphEncoder_Attn(k=self.args.k,
                                         d_graph=self.args.d_graph,
                                         d_data=data_dim,
@@ -71,9 +76,19 @@ class Exp_Basic(object):
                                         seq_len=self.args.seq_len,
                                         device=self.device,
                                         node_count=dBG_dataset.dBG.graph.number_of_nodes())
+        """
+        dbg_encoders = [GraphEncoder_Attn_new(k=d.k,
+                                        d_graph=self.args.d_graph,
+                                        d_data=data_dim,
+                                        graph_data=d.data,
+                                        seq_len=self.args.seq_len,
+                                        device=self.device,
+                                        node_count=d.dBG.graph.number_of_nodes(),
+                                        node_feats=d.node_feats,
+                                        num_layers=3) for d in dBG_datasets]
 
-        self.dBG_dataset = dBG_dataset
-        self.args.graph_encoder = dbg_encoder
+        self.dBG_dataset = dBG_datasets
+        self.args.graph_encoder = nn.ModuleList(dbg_encoders)
 
     def _build_model(self):
         raise NotImplementedError

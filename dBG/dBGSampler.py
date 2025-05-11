@@ -8,7 +8,7 @@ from torch_geometric.utils import from_networkx
 
 
 class dBGMasker:
-    def __init__(self, dBG, augment_prob=0.1, augment=True):
+    def __init__(self, dBG, augment_prob=0.1, augment=False):
         self.dBG = dBG
         self.augment_prob = augment_prob
         self.augment = augment
@@ -35,19 +35,20 @@ class dBGMasker:
 
         self.similar_node_cache = {}
 
-    def generate_mask(self, values):
+    def generate_mask(self, values, alpha=0.1):
         k_1 = self.dBG.k - 1
-        selected_nodes = set()
+        selected_nodes_dims = list()
 
         for dim in range(values.shape[0]):
+            selected_nodes = list()
             for i in range(values.shape[1] - k_1 + 1):
                 mer = tuple(values[dim, i:i + k_1])
                 query = (dim, mer)
 
                 if query in self.str_to_idx:
-                    selected_nodes.add(query)
+                    selected_nodes.append(query)
                 elif query in self.similar_node_cache:
-                    selected_nodes.add(self.similar_node_cache[query])
+                    selected_nodes.append(self.similar_node_cache[query])
                 else:
                     min_dist = float('inf')
                     best_match = None
@@ -57,13 +58,17 @@ class dBGMasker:
                             if dist < min_dist:
                                 min_dist = dist
                                 best_match = node
+                                if dist < 2:
+                                    break
                     if best_match is not None:
                         self.similar_node_cache[query] = best_match
-                        selected_nodes.add(best_match)
-
+                        selected_nodes.append(best_match)
+            selected_nodes_dims.append(selected_nodes)
+        """            
         # Make a copy to modify during iteration
-        selected_nodes_augmented = set(selected_nodes)
+        selected_nodes_augmented = selected_nodes_dims.copy()
 
+        # NOTE AUGMENT MAY NOT WORK PROPERLY
         if self.augment and self.augment_prob > 0:
             for node in list(selected_nodes):
                 if random.random() < self.augment_prob:
@@ -82,15 +87,18 @@ class dBGMasker:
                             self.similar_node_cache[node] = best_match
 
                     if best_match is not None:
-                        selected_nodes_augmented.discard(node)
-                        selected_nodes_augmented.add(best_match)
-
-        selected_idxs = [self.str_to_idx[n] for n in selected_nodes_augmented if n in self.str_to_idx]
-        soft_mask = self.__gaussian_mask(selected_idxs)
-
+                        selected_nodes_augmented.remove(node)
+                        selected_nodes_augmented.remove(node)
+        """
         mask = np.zeros(self.n_nodes, dtype=np.float32)
-        for idx, val in soft_mask.items():
-            mask[idx] = val
+        for selected_nodes in selected_nodes_dims:
+            selected_idxs = [self.str_to_idx[n] for n in selected_nodes if n in self.str_to_idx]
+
+            num_nodes = len(selected_idxs)
+            t = np.arange(num_nodes)
+            importance = (np.exp(alpha * t) - 1) / (np.exp(alpha * (num_nodes - 1)) - 1)
+            for i, idx in enumerate(selected_idxs):
+                mask[idx] = importance[i]
 
         return mask
 
@@ -102,9 +110,6 @@ class dBGMasker:
                                min_only=True)
         mask = np.exp(- (dist_matrix ** 2) / (2 * sigma ** 2))
         return {i: float(mask[i]) for i in range(self.n_nodes)}
-
-
-
 
 
 class dBGNeighborLoader:

@@ -3,113 +3,112 @@ from itertools import combinations
 
 import networkx as nx
 import numpy as np
-from sklearn.preprocessing import KBinsDiscretizer
-from sklearn.preprocessing import StandardScaler
+
 
 class MultivariateDeBruijnGraph:
     def __init__(self,
                  k: int,
                  dimensions: int,
                  disc_functions: list):
-        assert k >= 2, 'k-mer length must be more than 1!'
-        assert dimensions >= 1, 'Number of dimensions must be a positive number!'
-
+        assert k >= 2, 'k-mer length must be > 1'
+        assert dimensions >= 1, 'Number of dimensions must be positive'
         self.k = k
-        self.graph = nx.DiGraph()
         self.dimensions = dimensions
+        self.graph = nx.DiGraph()
 
-        assert len(disc_functions) == self.dimensions or len(disc_functions) == 1, 'disc_functions dimension mismatch'
-
-        if len(disc_functions) != dimensions:
-            self.discretizers = [copy.deepcopy(disc_functions[0]) for _ in range(self.dimensions)]
+        # build one discretizer per dimension
+        assert len(disc_functions) in (1, dimensions), 'disc_functions dimension mismatch'
+        if len(disc_functions) == 1:
+            self.discretizers = [copy.deepcopy(disc_functions[0]) for _ in range(dimensions)]
         else:
             self.discretizers = disc_functions
 
-        assert len(self.discretizers) == self.dimensions, 'disc_functions dimension mismatch'
-
     def __str__(self):
-        return f"{self.__class__.__name__} with " \
-               f"{self.graph.number_of_nodes()} nodes " \
-               f"and {self.graph.number_of_edges()} edges"
+        return f"{self.__class__.__name__}: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges"
 
     def discretize_data(self, sequences):
-        discrete_sequences = [None] * len(sequences)
-        for i, dim in enumerate(sequences):
-            values = np.array(dim).reshape(-1, 1)
-            discrete_sequences[i] = self.discretizers[i].fit_transform(values).astype(int).flatten()
-        return discrete_sequences
+        discrete = []
+        for i, seq in enumerate(sequences):
+            vals = np.array(seq).reshape(-1, 1)
+            disc = self.discretizers[i].fit_transform(vals).astype(int).flatten()
+            discrete.append(disc)
+        return discrete
 
     def insert(self, sequences):
-        assert self.dimensions == len(sequences), f'Dimension mismatch. Expected {self.dimensions} but got {len(sequences)}'
-        sequences = [np.array(row) for row in sequences]
-        disc_sequences = self.discretize_data(sequences)
-        for i, (kmers, raw_kmers) in enumerate(zip(self.__multivariate_sliding_window(disc_sequences),
-                                                   self.__multivariate_sliding_window(sequences))):
-            updated_prefix_nodes = set()
-            updated_suffix_nodes = set()
+        assert len(sequences) == self.dimensions
+        seqs = [np.array(s) for s in sequences]
+        disc_seqs = self.discretize_data(seqs)
 
-            for dim, (kmer, raw_kmer) in enumerate(zip(kmers, raw_kmers)):
+        for i, (kmers, raw_kmers) in enumerate(zip(
+                self.__multivariate_sliding_window(disc_seqs),
+                self.__multivariate_sliding_window(seqs))):
+
+            updated_prefix = set()
+            updated_suffix = set()
+
+            for dim, (kmer, raw) in enumerate(zip(kmers, raw_kmers)):
                 if kmer[0] is None:
                     continue
 
                 prefix = (dim, kmer[:-1])
-                if i == 0:
-                    updated_prefix_nodes.add(prefix)
-
                 suffix = (dim, kmer[1:])
-                updated_suffix_nodes.add(suffix)
-                self.__add_edge(prefix, suffix, {'kmer': np.array(kmer), 'type': 'ktuple'}, raw=raw_kmer)
+
+                self.__add_node_feature(prefix, raw[:-1])
+                self.__add_node_feature(suffix, raw[1:])
+
+                updated_prefix.add(prefix)
+                updated_suffix.add(suffix)
+
+                self.__add_edge(prefix, suffix, {'kmer': np.array(kmer), 'type': 'ktuple'})
 
             if i == 0:
-                self.__add_hyper_edges(updated_prefix_nodes)
-            self.__add_hyper_edges(updated_suffix_nodes)
+                self.__add_hyper_edges(updated_prefix)
+            self.__add_hyper_edges(updated_suffix)
 
-        for u, v in self.graph.edges:
-            self.graph[u][v].pop('raw', None)
+        node_features = [feat for (_, feat) in self.graph.nodes(data="features")]
 
-        k_1_mers = list()
-        for n in self.graph.nodes:
-            k_1_mers.append(n[1])
-        k_1_mers = np.array(k_1_mers)
-        scaler = StandardScaler()
-        k_1_mers = scaler.fit_transform(k_1_mers).astype(np.float32)
-        for node, scaled_feat in zip(self.graph.nodes, k_1_mers):
-            self.graph.nodes[node]['k_1_mer'] = scaled_feat
+        # Removed cuz dynamic features are not supported by pytorch geometric
+        for n, data in self.graph.nodes(data=True):
+            data.pop('feat', None)
 
-    def __add_edge(self, source: tuple, target: tuple, edge_attributes: dict, raw: list = None):
-        if not self.graph.has_edge(source, target):
-            if 'weight' not in edge_attributes.keys():
-                edge_attributes['weight'] = 1
-            if edge_attributes['type'] == 'ktuple':
-                edge_attributes['raw'] = [raw]
-            else:
-                edge_attributes['raw'] = []
-            self.graph.add_edge(source, target, **edge_attributes)
+        return node_features
+
+    def __add_node_feature(self, node, raw_k_1):
+        arr = np.array(raw_k_1).reshape(1, -1)
+        if not self.graph.has_node(node):
+            self.graph.add_node(node, features=arr)
         else:
-            if edge_attributes['type'] == 'ktuple':
-                self.graph[source][target]['raw'].append(raw)
-            self.graph[source][target]['weight'] += 1
+            feats = self.graph.nodes[node].get('features', [])
+            feats = np.vstack([feats, arr])
+            self.graph.nodes[node]['features'] = feats
+
+    def __add_edge(self, source, target, attrs):
+        w = attrs.get('weight', 0) + 1
+        attrs['weight'] = w
+        if not self.graph.has_edge(source, target):
+            self.graph.add_edge(source, target, **attrs)
+        else:
+            # just bump the weight; other attrs (like kmer/type) remain
+            self.graph[source][target]['weight'] = w
 
     def __add_hyper_edges(self, nodes):
-        for node1, node2 in combinations(nodes, 2):
-            self.__add_edge(node1, node2, {'type': 'hyper', 'kmer': np.zeros(self.k, dtype=int)})
-            self.__add_edge(node2, node1, {'type': 'hyper', 'kmer': np.zeros(self.k, dtype=int)})
+        for n1, n2 in combinations(nodes, 2):
+            # hyper‐edges still only carry type/kmer, no raw
+            self.__add_edge(n1, n2, {'type': 'hyper', 'kmer': np.zeros(self.k, int)})
+            self.__add_edge(n2, n1, {'type': 'hyper', 'kmer': np.zeros(self.k, int)})
 
     def __multivariate_sliding_window(self, sequences):
-        window_num = max(len(seq) for seq in sequences) - self.k + 1
-        i = 0
-        while True:
-            current_windows = []
-            for seq in sequences:
-                if i + self.k <= len(seq):
-                    current_windows.append(tuple(seq[i: i + self.k]))
+        max_len = max(len(s) for s in sequences)
+        window_count = max_len - self.k + 1
+        for i in range(window_count):
+            current = []
+            for s in sequences:
+                if i + self.k <= len(s):
+                    current.append(tuple(s[i:i + self.k]))
                 else:
-                    current_windows.append((None,) * self.k)
+                    current.append((None,) * self.k)
+            yield current
 
-            yield current_windows
-            i += 1
-            if i >= window_num:
-                return
 
 """
 if __name__ == "__main__":

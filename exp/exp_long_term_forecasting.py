@@ -44,11 +44,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         total_loss = []
         self.model.eval()
         if self.args.dBG:
-            self.dBG_dataset.augment = False
+            for dBG_dataset in self.dBG_dataset:
+                dBG_dataset.augment = True
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
                 if self.args.dBG:
-                    dbg_mask = self.dBG_dataset.generate_mask(batch_x)
+                    dbg_mask = [dBG_dataset.generate_mask(batch_x) for dBG_dataset in self.dBG_dataset]
                 else:
                     dbg_mask = None
                 batch_x = batch_x.float().to(self.device)
@@ -84,8 +85,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         train_data, train_loader = self._get_data(flag='train')
         vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
+
         if self.args.dBG:
-            self.dBG_dataset.augment = True
+            for dBG_dataset in self.dBG_dataset:
+                dBG_dataset.augment = False
+
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -108,8 +112,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             self.model.train()
             epoch_time = time.time()
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+                print(i)
                 if self.args.dBG:
-                    dbg_mask = self.dBG_dataset.generate_mask(batch_x)
+                    dbg_mask = [dBG_dataset.generate_mask(batch_x) for dBG_dataset in self.dBG_dataset]
                 else:
                     dbg_mask = None
                 iter_count += 1
@@ -200,7 +205,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         preds = []
         trues = []
         if self.args.dBG:
-            self.dBG_dataset.augment = False
+            for dBG_dataset in self.dBG_dataset:
+                dBG_dataset.augment = False
         folder_path = './test_results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
@@ -209,7 +215,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
                 if self.args.dBG:
-                    dbg_mask = self.dBG_dataset.generate_mask(batch_x)
+                    dbg_mask = [dBG_dataset.generate_mask(batch_x) for dBG_dataset in self.dBG_dataset]
                 else:
                     dbg_mask = None
                 batch_x = batch_x.float().to(self.device)

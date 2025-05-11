@@ -92,7 +92,7 @@ class Model(nn.Module):
                                     for _ in range(configs.e_layers)])
         if self.dBG:
             self.dbg_encoder = configs.graph_encoder
-
+            self.dBG_pooler = nn.Parameter(torch.randn(len(self.dbg_encoder)))
         self.enc_embedding = DataEmbedding(c_in=configs.enc_in,
                                            d_model=configs.d_model,
                                            embed_type=configs.embed,
@@ -114,7 +114,7 @@ class Model(nn.Module):
             self.projection = nn.Linear(
                 (configs.d_model + self.d_graph) * configs.seq_len, configs.num_class)
 
-    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_mask):
+    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, dbg_feats):
         # Normalization from Non-stationary Transformer
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
@@ -125,9 +125,17 @@ class Model(nn.Module):
         # embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [B,T,C]
 
+        graph_encs = []
         if self.dBG:
-            dbg_enc = self.dbg_encoder(x_enc, dbg_mask)
-            enc_out = torch.cat((enc_out, dbg_enc), dim=-1)
+            for i, dBG_enc in enumerate(self.dbg_encoder):
+                graph_encs.append(dBG_enc(dbg_feats[i]))
+
+            graph_stack = torch.stack(graph_encs, dim=0)  # (N, B, T, D)
+            attn_weights = F.softmax(self.dBG_pooler, dim=0)  # (N,)
+            attn_weights = attn_weights.view(-1, 1, 1, 1)  # reshape for broadcasting
+            dbg_out = torch.sum(attn_weights * graph_stack, dim=0)  # (B, T, D)
+            enc_out = torch.cat([enc_out, dbg_out], dim=-1)   # (B, T, D+G)
+
 
         enc_out = self.predict_linear(enc_out.permute(0, 2, 1)).permute(
             0, 2, 1)  # align temporal dimension
