@@ -94,11 +94,11 @@ class dBGMasker:
         for selected_nodes in selected_nodes_dims:
             selected_idxs = [self.str_to_idx[n] for n in selected_nodes if n in self.str_to_idx]
 
-            num_nodes = len(selected_idxs)
-            t = np.arange(num_nodes)
-            importance = (np.exp(alpha * t) - 1) / (np.exp(alpha * (num_nodes - 1)) - 1)
+            # num_nodes = len(selected_idxs)
+            # t = np.arange(num_nodes)
+            # importance = (np.exp(alpha * t) - 1) / (np.exp(alpha * (num_nodes - 1)) - 1)
             for i, idx in enumerate(selected_idxs):
-                mask[idx] = importance[i]
+                mask[idx] = 1
 
         return mask
 
