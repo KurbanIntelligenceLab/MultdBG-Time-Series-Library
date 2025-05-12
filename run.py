@@ -146,7 +146,8 @@ if __name__ == '__main__':
     parser.add_argument('--dBG', action="store_true", help='Enable dBG_encoder features')
     parser.add_argument('--k', type=int, default=4, help='k parameter for dBG_encoder')
     parser.add_argument('--d_graph', type=int, default=None, help='Encoding dims for the dBG_encoder')
-    parser.add_argument('--disc', type=int, default=20, help='Alphabet size for dBG_encoder')
+    parser.add_argument('--disc', type=int, nargs='+', default=[20], help='List of alphabet sizes for dBG_encoder')
+    parser.add_argument('--dBG_enc_layers', type=int, default=3, help='Number of layers for dBG_encoder')
 
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:

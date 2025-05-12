@@ -61,10 +61,8 @@ class Exp_Basic(object):
         data_set, _ = data_provider(self.args, 'train')
         data_dim = data_set[0][0].shape[1]
         scaler = data_set.scaler
-        dBG_dataset1 = dBG_Dataset(self.args.k, data_dim, 20, data_set.data_x.T, [5, 3], self.device)
-        dBG_dataset2 = dBG_Dataset(self.args.k, data_dim, 30, data_set.data_x.T, [5, 3], self.device)
-        dBG_dataset3 = dBG_Dataset(self.args.k, data_dim, 35, data_set.data_x.T, [5, 3], self.device)
-        dBG_datasets = [dBG_dataset1, dBG_dataset2, dBG_dataset3]
+
+        dBG_datasets = [dBG_Dataset(self.args.k, data_dim, disc, data_set.data_x.T, [5, 3], self.device) for disc in self.args.disc]
 
         if self.args.d_graph is None:
             self.args.d_graph = data_dim
@@ -85,7 +83,7 @@ class Exp_Basic(object):
                                         device=self.device,
                                         node_count=d.dBG.graph.number_of_nodes(),
                                         node_feats=d.node_feats,
-                                        num_layers=3) for d in dBG_datasets]
+                                        num_layers=self.args.dBG_enc_layers) for d in dBG_datasets]
 
         self.dBG_dataset = dBG_datasets
         self.args.graph_encoder = nn.ModuleList(dbg_encoders)
