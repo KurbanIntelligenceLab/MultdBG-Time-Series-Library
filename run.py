@@ -141,7 +141,6 @@ if __name__ == '__main__':
     # TimeXer
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
 
-
     # dBG_encoder Parameters
     parser.add_argument('--dBG', action="store_true", help='Enable dBG_encoder features')
     parser.add_argument('--reverse', action="store_true", help='Reverses the dBG edge directions')
@@ -221,14 +220,19 @@ if __name__ == '__main__':
                 args.des, ii)
 
             if args.dBG:
-                dbg_setting = 'k{}_dg{}_disc{}_layers{}_rev{}_undir{}_gdc{}'.format(
+                dbg_setting = 'k{}_dg{}_disc{}_layers{}_rev{}_undir{}_gdc{}_nf{}_heads{}_drop{}_topk{}_alpha{}'.format(
                     args.k,
                     args.d_graph if args.d_graph is not None else 'None',
                     '-'.join(map(str, args.disc)) if isinstance(args.disc, list) else args.disc,
                     args.dBG_enc_layers,
                     int(args.reverse),
                     int(args.undirected),
-                    int(args.use_gdc)
+                    int(args.use_gdc),
+                    args.node_feat_size,
+                    args.dBG_heads,
+                    args.dBG_dropout,
+                    args.dBG_topk,
+                    args.ppr_alpha
                 )
                 setting = '{}_{}'.format(dbg_setting, setting)
 
@@ -269,14 +273,19 @@ if __name__ == '__main__':
             args.des, ii)
 
         if args.dBG:
-            dbg_setting = 'k{}_dg{}_disc{}_layers{}_rev{}_undir{}_gdc{}'.format(
+            dbg_setting = 'k{}_dg{}_disc{}_layers{}_rev{}_undir{}_gdc{}_nf{}_heads{}_drop{}_topk{}_alpha{}'.format(
                 args.k,
                 args.d_graph if args.d_graph is not None else 'None',
                 '-'.join(map(str, args.disc)) if isinstance(args.disc, list) else args.disc,
                 args.dBG_enc_layers,
                 int(args.reverse),
                 int(args.undirected),
-                int(args.use_gdc)
+                int(args.use_gdc),
+                args.node_feat_size,
+                args.dBG_heads,
+                args.dBG_dropout,
+                args.dBG_topk,
+                args.ppr_alpha
             )
             setting = '{}_{}'.format(dbg_setting, setting)
 
