@@ -2,6 +2,9 @@ import os
 import argparse
 from itertools import product
 
+# for f in runscripts/slurm_jobs/ETTh1/12/720/*.sh; do sbatch "$f"; done
+# python runscripts/ETTh1.py --seq_len 12 --label_len 6 --pred_len 720
+
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser()
 parser.add_argument('--seq_len', type=int, required=True, help='Input sequence length')
@@ -17,8 +20,8 @@ dBG_heads_values = [4, 8, 16]
 dBG_topk_values = [4, 16, 32]
 
 # --- SLURM Job Setup ---
-os.makedirs("runscripts/slurm_jobs", exist_ok=True)
-os.makedirs("runscripts/slurm_jobs/ETTh1", exist_ok=True)
+root_path = os.path.join(f"runscripts/slurm_jobs/ETTh1", str(args.seq_len), str(args.pred_len))
+os.makedirs(root_path, exist_ok=True)
 
 base_command = (
     f"python -u run.py --task_name long_term_forecast --is_training 1 "
@@ -36,7 +39,7 @@ for d_graph, layers, feat_size, heads, topk in product(
 ):
     job_id += 1
     job_name = f"dBG_ETTh1_{job_id}"
-    script_path = f"runscripts/slurm_jobs/ETTh1/{job_name}.sh"
+    script_path = os.path.join(root_path, f"{job_name}.sh")
 
     full_command = (
         f"{base_command} --d_graph {d_graph} --dBG_enc_layers {layers} "
