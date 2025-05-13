@@ -65,7 +65,7 @@ class Exp_Basic(object):
                                     dimensions=data_dim,
                                     disc=disc,
                                     train_data=data_set.data_x.T,
-                                    num_neighbors=None, # not used for masking approach
+                                    num_neighbors=None,  # not used for masking approach
                                     reverse=self.args.reverse,
                                     undirected=self.args.undirected,
                                     device=self.device) for disc in self.args.disc]
@@ -82,14 +82,19 @@ class Exp_Basic(object):
                                         node_count=dBG_dataset.dBG.graph.number_of_nodes())
         """
         dbg_encoders = [GraphEncoder_Attn_new(k=d.k,
-                                        d_graph=self.args.d_graph,
-                                        d_data=data_dim,
-                                        graph_data=d.data,
-                                        seq_len=self.args.seq_len,
-                                        device=self.device,
-                                        node_feats=d.node_feats,
-                                        num_layers=self.args.dBG_enc_layers,
-                                        use_gdc=self.args.use_gdc) for d in dBG_datasets]
+                                              d_graph=self.args.d_graph,
+                                              d_data=data_dim,
+                                              graph_data=d.data,
+                                              seq_len=self.args.seq_len,
+                                              device=self.device,
+                                              node_feats=d.node_feats,
+                                              num_layers=self.args.dBG_enc_layers,
+                                              use_gdc=self.args.use_gdc,
+                                              node_feat_size=self.args.node_feat_size,
+                                              heads=self.args.dBG_heads,
+                                              dropout=self.args.dBG_dropout,
+                                              topk=self.args.dBG_topk,
+                                              ppr_alpha=self.args.ppr_alpha) for d in dBG_datasets]
 
         self.dBG_dataset = dBG_datasets
         self.args.graph_encoder = nn.ModuleList(dbg_encoders)

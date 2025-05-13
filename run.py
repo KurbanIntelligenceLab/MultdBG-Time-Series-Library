@@ -147,10 +147,15 @@ if __name__ == '__main__':
     parser.add_argument('--reverse', action="store_true", help='Reverses the dBG edge directions')
     parser.add_argument('--undirected', action="store_true", help='Converts dBG into an undirected graph')
     parser.add_argument('--k', type=int, default=4, help='k parameter for dBG_encoder')
-    parser.add_argument('--d_graph', type=int, default=None, help='Encoding dims for the dBG_encoder')
-    parser.add_argument('--disc', type=int, nargs='+', default=[20], help='List of alphabet sizes for dBG_encoder')
+    parser.add_argument('--d_graph', type=int, default=8, help='Encoding dims for the dBG_encoder')
+    parser.add_argument('--disc', type=int, nargs='+', default=[20, 25, 30], help='List of alphabet sizes for dBG_encoder')
     parser.add_argument('--dBG_enc_layers', type=int, default=3, help='Number of layers for dBG_encoder')
     parser.add_argument('--use_gdc', action="store_true", help='Enables GDC transformation')
+    parser.add_argument('--node_feat_size', type=int, default=8, help='Feature size for each node')
+    parser.add_argument('--dBG_heads', type=int, default=8, help='Number of attention heads in the dBG_encoder')
+    parser.add_argument('--dBG_dropout', type=float, default=0.4, help='Dropout rate in the dBG_encoder')
+    parser.add_argument('--dBG_topk', type=int, default=128,help='Top-K parameter for GDC sparsification in dBG_encoder')
+    parser.add_argument('--ppr_alpha', type=float, default=0.05, help='Alpha value for PPR in GDC diffusion in dBG_encoder')
 
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
