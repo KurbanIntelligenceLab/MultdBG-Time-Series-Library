@@ -23,7 +23,7 @@ os.makedirs("runscripts/slurm_jobs/ETTh1", exist_ok=True)
 base_command = (
     f"python -u run.py --task_name long_term_forecast --is_training 1 "
     f"--root_path ./dataset/ETT-small/ --data_path ETTh1.csv --model_id ETTh1_{args.seq_len}_{args.pred_len} "
-    f"--model TimesNet --data custom --features M --seq_len {args.seq_len} --label_len {args.label_len} --pred_len {args.pred_len} "
+    f"--model TimesNet --data ETTh1 --features M --seq_len {args.seq_len} --label_len {args.label_len} --pred_len {args.pred_len} "
     f"--e_layers 2 --d_layers 1 --factor 3 --enc_in 7 --dec_in 7 --c_out 7 "
     f"--d_model 16 --d_ff 32 --top_k 5 --des 'Exp' --itr 1 --k 4 --disc 20 25 30 "
     f"--dBG --use_gdc"
