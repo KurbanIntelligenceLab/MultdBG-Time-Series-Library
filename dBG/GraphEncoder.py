@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.nn import GATConv
 import torch.nn.functional as F
+import torch_geometric.transforms as T
 
 
 
@@ -47,8 +48,8 @@ class GraphEncoder_Attn_new(nn.Module):
         d_graph: int,
         seq_len: int,
         d_data: int,
+        use_gdc: bool,
         device: torch.device,
-        node_count: int,
         node_feats: torch.Tensor,
         graph_data,
         num_layers: int,
@@ -65,13 +66,23 @@ class GraphEncoder_Attn_new(nn.Module):
         self.device = device
         self.node_feats = node_feats
         self.node_feat_size = node_feat_size
-        # GAT edge index
-        self.edge_index = graph_data.edge_index
 
         # --- feature-level attention to go from A×K -> d_data ---
         self.key_linear = nn.Linear((k - 1) * node_feat_size, d_data)
         self.value_linear = nn.Linear((k - 1) * node_feat_size, d_data)
         self.feature_query = nn.Parameter(torch.randn(d_data))
+
+        if use_gdc:
+            transform = T.GDC(
+                    normalization_in='sym',
+                    normalization_out='col',
+                    diffusion_kwargs=dict(method='ppr', alpha=0.05),
+                    sparsification_kwargs=dict(method='topk', k=128, dim=0),
+                    exact=True)
+            graph_data = transform(graph_data)
+
+        # GAT edge index
+        self.edge_index = graph_data.edge_index
 
         # --- GAT layers ---
         self.convs = nn.ModuleList()

@@ -144,10 +144,13 @@ if __name__ == '__main__':
 
     # dBG_encoder Parameters
     parser.add_argument('--dBG', action="store_true", help='Enable dBG_encoder features')
+    parser.add_argument('--reverse', action="store_true", help='Reverses the dBG edge directions')
+    parser.add_argument('--undirected', action="store_true", help='Converts dBG into an undirected graph')
     parser.add_argument('--k', type=int, default=4, help='k parameter for dBG_encoder')
     parser.add_argument('--d_graph', type=int, default=None, help='Encoding dims for the dBG_encoder')
     parser.add_argument('--disc', type=int, nargs='+', default=[20], help='List of alphabet sizes for dBG_encoder')
     parser.add_argument('--dBG_enc_layers', type=int, default=3, help='Number of layers for dBG_encoder')
+    parser.add_argument('--use_gdc', action="store_true", help='Enables GDC transformation')
 
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
@@ -169,8 +172,6 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print_args(args)
 
-    wandb.init(project="NARROW", name='ETT_H_Attn', config=vars(args))
-
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast
     elif args.task_name == 'short_term_forecast':
@@ -183,6 +184,10 @@ if __name__ == '__main__':
         Exp = Exp_Classification
     else:
         Exp = Exp_Long_Term_Forecast
+
+    ######################
+    exp_name = 'Direction'
+    ######################
 
     if args.is_training:
         for ii in range(args.itr):
@@ -209,6 +214,20 @@ if __name__ == '__main__':
                 args.embed,
                 args.distil,
                 args.des, ii)
+
+            if args.dBG:
+                dbg_setting = 'k{}_dg{}_disc{}_layers{}_rev{}_undir{}_gdc{}'.format(
+                    args.k,
+                    args.d_graph if args.d_graph is not None else 'None',
+                    '-'.join(map(str, args.disc)) if isinstance(args.disc, list) else args.disc,
+                    args.dBG_enc_layers,
+                    int(args.reverse),
+                    int(args.undirected),
+                    int(args.use_gdc)
+                )
+                setting = '{}_{}'.format(dbg_setting, setting)
+
+            wandb.init(project=exp_name, config=vars(args))
 
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
             exp.train(setting)
@@ -243,6 +262,20 @@ if __name__ == '__main__':
             args.embed,
             args.distil,
             args.des, ii)
+
+        if args.dBG:
+            dbg_setting = 'k{}_dg{}_disc{}_layers{}_rev{}_undir{}_gdc{}'.format(
+                args.k,
+                args.d_graph if args.d_graph is not None else 'None',
+                '-'.join(map(str, args.disc)) if isinstance(args.disc, list) else args.disc,
+                args.dBG_enc_layers,
+                int(args.reverse),
+                int(args.undirected),
+                int(args.use_gdc)
+            )
+            setting = '{}_{}'.format(dbg_setting, setting)
+
+        wandb.init(project=exp_name, config=vars(args))
 
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
         exp.test(setting, test=1)

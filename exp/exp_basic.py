@@ -60,9 +60,15 @@ class Exp_Basic(object):
     def init_dbg_encoder(self):
         data_set, _ = data_provider(self.args, 'train')
         data_dim = data_set[0][0].shape[1]
-        scaler = data_set.scaler
 
-        dBG_datasets = [dBG_Dataset(self.args.k, data_dim, disc, data_set.data_x.T, [5, 3], self.device) for disc in self.args.disc]
+        dBG_datasets = [dBG_Dataset(k=self.args.k,
+                                    dimensions=data_dim,
+                                    disc=disc,
+                                    train_data=data_set.data_x.T,
+                                    num_neighbors=None, # not used for masking approach
+                                    reverse=self.args.reverse,
+                                    undirected=self.args.undirected,
+                                    device=self.device) for disc in self.args.disc]
 
         if self.args.d_graph is None:
             self.args.d_graph = data_dim
@@ -81,9 +87,9 @@ class Exp_Basic(object):
                                         graph_data=d.data,
                                         seq_len=self.args.seq_len,
                                         device=self.device,
-                                        node_count=d.dBG.graph.number_of_nodes(),
                                         node_feats=d.node_feats,
-                                        num_layers=self.args.dBG_enc_layers) for d in dBG_datasets]
+                                        num_layers=self.args.dBG_enc_layers,
+                                        use_gdc=self.args.use_gdc) for d in dBG_datasets]
 
         self.dBG_dataset = dBG_datasets
         self.args.graph_encoder = nn.ModuleList(dbg_encoders)

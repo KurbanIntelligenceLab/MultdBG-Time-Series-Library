@@ -56,3 +56,12 @@ def print_args(args):
     p_hidden_dims_str = ', '.join(map(str, args.p_hidden_dims))
     print(f'  {"P Hidden Dims:":<20}{p_hidden_dims_str:<20}{"P Hidden Layers:":<20}{args.p_hidden_layers:<20}') 
     print()
+
+    if args.dBG:
+        print("\033[1m" + "dBG_encoder Parameters" + "\033[0m")
+        print(f'  {"Use dBG:":<20}{args.dBG:<20}{"Reverse Edges:":<20}{args.reverse:<20}')
+        print(f'  {"Undirected:":<20}{args.undirected:<20}{"Use GDC:":<20}{args.use_gdc:<20}')
+        print(f'  {"k-mer Size:":<20}{args.k:<20}{"Graph Dim:":<20}{args.d_graph if args.d_graph is not None else "None":<20}')
+        disc_str = ', '.join(map(str, args.disc)) if isinstance(args.disc, list) else str(args.disc)
+        print(f'  {"Alphabet Sizes:":<20}{disc_str:<20}{"Encoder Layers:":<20}{args.dBG_enc_layers:<20}')
+        print()

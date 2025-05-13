@@ -116,7 +116,7 @@ class Dataset_ETT_hour(Dataset):
 
 
 class dBG_Dataset:
-    def __init__(self, k, dimensions, disc, train_data, num_neighbors, device):
+    def __init__(self, k, dimensions, disc, train_data, num_neighbors, reverse, undirected, device):
         self.k = k
         self.dimensions = dimensions
         self.disc = disc
@@ -146,7 +146,12 @@ class dBG_Dataset:
         print(self.dBG)
         self.sampler = dBGNeighborLoader(self.dBG, num_neighbors)
         self.dBGMasker = dBGMasker(self.dBG)
-        self.dBG.graph.reverse(copy=False)
+
+        if reverse:
+            self.dBG.graph = self.dBG.graph.reverse()
+        if undirected:
+            self.dBG.graph = self.dBG.graph.to_undirected()
+
         self.data = from_networkx(self.dBG.graph).to(device)
         self.device = device
 
