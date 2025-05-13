@@ -17,7 +17,8 @@ dBG_heads_values = [4, 8, 16]
 dBG_topk_values = [4, 16, 32]
 
 # --- SLURM Job Setup ---
-os.makedirs("slurm_jobs", exist_ok=True)
+os.makedirs("runscripts/slurm_jobs", exist_ok=True)
+os.makedirs("runscripts/slurm_jobs/ETTh1", exist_ok=True)
 
 base_command = (
     f"python -u run.py --task_name long_term_forecast --is_training 1 "
@@ -34,8 +35,8 @@ for d_graph, layers, feat_size, heads, topk in product(
     d_graph_values, dBG_enc_layers_values, node_feat_size_values, dBG_heads_values, dBG_topk_values
 ):
     job_id += 1
-    job_name = f"dBG_{job_id}"
-    script_path = f"slurm_jobs/{job_name}.sh"
+    job_name = f"dBG_ETTh1_{job_id}"
+    script_path = f"runscripts/slurm_jobs/ETTh1/{job_name}.sh"
 
     full_command = (
         f"{base_command} --d_graph {d_graph} --dBG_enc_layers {layers} "
