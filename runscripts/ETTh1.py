@@ -54,7 +54,7 @@ for d_graph, layers, feat_size, heads, topk in product(
 #SBATCH --cpus-per-task=1
 #SBATCH --gpus-per-node=1
 #SBATCH --time=1:00:00
-#SBATCH --mem=64G
+#SBATCH --mem=42G
 #SBATCH -A r00432
 
 module load conda

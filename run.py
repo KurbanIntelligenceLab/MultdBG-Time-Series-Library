@@ -190,7 +190,7 @@ if __name__ == '__main__':
         Exp = Exp_Long_Term_Forecast
 
     ######################
-    exp_name = 'Direction'
+    exp_name = f'dBG_{args.dBG}_{args.data}_{args.seq_len}_{args.label_len}_{args.pred_len}' 
     ######################
 
     if args.is_training:
