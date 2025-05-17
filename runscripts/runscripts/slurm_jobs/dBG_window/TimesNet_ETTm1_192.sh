@@ -1,3 +1,21 @@
+#!/bin/bash
+#SBATCH -J dBG_ETTm1_192
+#SBATCH -p gpu
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=meocakir@iu.edu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --gpus-per-node=1
+#SBATCH --time=10:00:00
+#SBATCH --mem=42G
+#SBATCH -A r00432
+
+module load conda
+conda activate TSLibEnv
+
+wandb online
+
 model_name=TimesNet
 
 
