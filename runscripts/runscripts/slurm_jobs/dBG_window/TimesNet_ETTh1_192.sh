@@ -22,7 +22,7 @@ python -u run.py \
   --d_ff 32 \
   --des 'Exp' \
   --itr 5 \
-  --top_k 5 5 \
+  --top_k 5 \
   --top_k 5 --k 4 --disc 20 25 30 --dBG --use_gdc --d_graph 16 --dBG_enc_layers 2 --node_feat_size 4 --dBG_heads 16 --dBG_topk 32
 
 
