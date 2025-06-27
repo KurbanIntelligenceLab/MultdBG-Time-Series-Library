@@ -7,18 +7,16 @@ Presented at the **[ICML 2025 Workshop on Structured Foundation Models](https://
 
 
 ## Overview
-
 **DRAGON** (Discrete Representation and Augmented Graph encoding Over de BruijN graphs) is a symbolic encoder that enhances time series forecasting models by incorporating graph-based representations derived from symbolic discretization.
 
-<div style="display: flex; justify-content: center; gap: 20px;">
-  <img src="pic/MdBG.png" alt="MdBG" width="45%">
-  <img src="pic/DRAGON.png" alt="DRAGON" width="45%">
-</div>
-
+![DRAGON](pic/DRAGON.png)
 
 ### Key Components
 
 * **Multivariate de Bruijn Graph (MdBG):** Captures intra- and inter-dimensional motifs across time series using symbolic k-tuples.
+
+![MdBG](pic/MdBG.png)
+
 * **DRAGON Module:** A plug-and-play encoder that learns global structural patterns using graph attention and diffusion over MdBGs.
 * **Dual-Branch Architecture:** Combines DRAGON with a standard encoder (e.g., CNN) to improve temporal modeling under constrained input.
 
