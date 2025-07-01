@@ -53,7 +53,7 @@ Please cite our work if you use this code:
 ```bibtex
 @misc{cakiroglu2025dragon,
       title={Multivariate de Bruijn Graphs: A Symbolic Graph Framework for Time Series Forecasting}, 
-      author={Mert Onur Cakiroglu and Idil Bilge Altun and Hasan Kurban and Elham Buxton and Mehmet Dalkilic},
+      author={Mert Onur Cakiroglu and Idil Bilge Altun and Mehmet Dalkilic and Elham Buxton and Hasan Kurban},
       year={2025},
       eprint={2505.22768},
       archivePrefix={arXiv},
